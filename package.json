@@ -1,0 +1,49 @@
+{
+  "name": "suaka-cuanku",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "security:test": "node tests/security-regression.test.mjs",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:clear": "tsx prisma/clear.ts",
+    "db:reset": "tsx prisma/reset.ts",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@types/nodemailer": "^8.0.0",
+    "bcryptjs": "^3.0.3",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^1.7.0",
+    "next": "16.2.2",
+    "nodemailer": "^8.0.7",
+    "pg": "^8.20.0",
+    "prisma": "^6.19.3",
+    "qrcode": "^1.5.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.4.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.2",
+    "playwright": "^1.59.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

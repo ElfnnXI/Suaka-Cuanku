@@ -1,0 +1,181 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  AUDITOR
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REJECTED
+}
+
+model User {
+  id          String      @id @default(uuid())
+  name        String
+  email       String      @unique
+  password    String
+  sessionVersion Int      @default(0)
+  mfaTotpEnabled Boolean  @default(false)
+  mfaTotpSecret  String?
+  mfaEnrolledAt  DateTime?
+  role        Role        @default(USER)
+  status      UserStatus  @default(ACTIVE)
+  riskLevel   RiskLevel   @default(LOW)
+  riskReason  String?
+  loanLimit   Int         @default(30000000)
+  updatedAt   DateTime    @updatedAt @default(now())
+  createdAt   DateTime    @default(now())
+  loans       Loan[]
+  auditLogs   AuditLog[]
+  authChallenges AuthChallenge[]
+  backupCodes UserBackupCode[]
+  passwordResetChallenges PasswordResetChallenge[]
+  sensitiveActionChallenges SensitiveActionChallenge[]
+}
+
+model Loan {
+  id        String   @id @default(uuid())
+  userId    String
+  amount    Float
+  interest  Float
+  duration  Int
+  status    LoanStatus @default(PENDING)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments  Payment[]
+}
+
+model Payment {
+  id       String   @id @default(uuid())
+  loanId   String
+  amount   Float
+  paidAt   DateTime @default(now())
+  status   PaymentStatus @default(PENDING)
+
+  loan     Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  auditorId   String
+  action      String   // VIEW_LOANS, VIEW_USERS, VIEW_PAYMENTS, GENERATE_REPORT, etc.
+  description String
+  details     String?  @db.Text
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  auditor     User     @relation(fields: [auditorId], references: [id], onDelete: Cascade)
+}
+
+model RateLimitEntry {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime @map("reset_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("rate_limit_entries")
+}
+
+model AuthChallenge {
+  id                    String   @id @default(uuid())
+  userId                String   @map("user_id")
+  pendingTotpSecret     String?  @map("pending_totp_secret")
+  expiresAt             DateTime @map("expires_at")
+  consumedAt            DateTime? @map("consumed_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auth_challenges")
+}
+
+model UserBackupCode {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  codeHash   String   @map("code_hash")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_backup_codes")
+}
+
+model PasswordResetChallenge {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  pendingTotpSecret  String?  @map("pending_totp_secret")
+  expiresAt          DateTime @map("expires_at")
+  consumedAt         DateTime? @map("consumed_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_challenges")
+}
+
+model SensitiveActionChallenge {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  action             String
+  targetEmail        String?  @map("target_email")
+  pendingTotpSecret  String?  @map("pending_totp_secret")
+  expiresAt          DateTime @map("expires_at")
+  consumedAt         DateTime? @map("consumed_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, action])
+  @@map("sensitive_action_challenges")
+}

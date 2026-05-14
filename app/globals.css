@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+:root {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --primary: #06b6d4;
+  --primary-dark: #0891b2;
+  --secondary: #22d3ee;
+  --neutral-100: #0f172a;
+  --neutral-200: #1e293b;
+  --neutral-300: #94a3b8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-200: var(--neutral-200);
+  --color-neutral-300: var(--neutral-300);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: radial-gradient(circle at top right, #1e293b, #0f172a, #020617);
+  color: var(--foreground);
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+  min-height: 100vh;
+  scroll-behavior: smooth;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.page-transition {
+  animation: page-enter 220ms ease-out;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Glossy Card Style */
+.glossy-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+  transition: all 0.3s ease;
+}
+
+.glossy-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(34, 211, 238, 0.5);
+  transform: translateY(-5px);
+  box-shadow: 0 12px 40px 0 rgba(6, 182, 212, 0.15);
+}
+
+/* Glossy Button Styles */
+.btn-glossy-primary {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+  color: white;
+}
+
+.btn-glossy-primary:hover {
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.6);
+  transform: scale(1.02);
+}
+
+.btn-glossy-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+  color: white;
+}
+
+.btn-glossy-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(34, 211, 238, 0.4);
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+}
+
+/* Text Effects */
+.text-glow {
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+}
+
+.gradient-text {
+  background: linear-gradient(to right, #ffffff, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-cyan {
+  background: linear-gradient(to right, #06b6d4, #22d3ee);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow Spheres */
+.glow-sphere {
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, transparent 70%);
+  z-index: -1;
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+/* Input Styles for Dark Theme */
+input, textarea {
+  color: #f8fafc !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: #06b6d4 !important;
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.2) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: rgba(148, 163, 184, 0.6) !important;
+}
+
+/* Dashboard forms - dark text on white background */
+.dashboard-form input,
+.dashboard-form textarea,
+.bg-white input,
+.bg-white textarea {
+  color: #1e293b !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.dashboard-form input:focus,
+.dashboard-form textarea:focus,
+.bg-white input:focus,
+.bg-white textarea:focus {
+  border-color: #06b6d4 !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1) !important;
+}
+
+.dashboard-form input::placeholder,
+.dashboard-form textarea::placeholder,
+.bg-white input::placeholder,
+.bg-white textarea::placeholder {
+  color: #94a3b8 !important;
+}
