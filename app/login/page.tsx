@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react';
 import { apiFetch } from '@/lib/client-api';
 import { getSafeRedirectPath } from '@/lib/security-helpers';
 import Captcha from '@/components/ui/captcha';
+import Modal from '@/components/ui/modal';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -15,6 +16,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [captchaData, setCaptchaData] = useState<{ token: string; answer: string } | null>(null);
+  const [showSecurityReminder, setShowSecurityReminder] = useState(false);
+  const [pendingRedirect, setPendingRedirect] = useState('');
   const passwordHint = 'Minimal 10 karakter dengan huruf, angka, dan simbol.';
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,11 +41,6 @@ export default function LoginPage() {
         throw new Error(data.error || 'Login failed');
       }
 
-      if (data.requiresMfa) {
-        window.location.assign('/mfa');
-        return;
-      }
-
       if (!data.user || !data.user.role) {
         throw new Error('Server returned invalid data');
       }
@@ -52,13 +50,20 @@ export default function LoginPage() {
         throw new Error('Sesi login belum siap. Coba lagi.');
       }
 
+      const meData = await meResponse.json();
+
       const redirectParam =
         typeof window !== 'undefined'
           ? new URLSearchParams(window.location.search).get('redirect')
           : null;
       const redirectPath = getSafeRedirectPath(redirectParam, data.user.role);
 
-      window.location.assign(redirectPath);
+      if (meData.user && !meData.user.hasSecurityQuestions) {
+        setPendingRedirect(redirectPath);
+        setShowSecurityReminder(true);
+      } else {
+        window.location.assign(redirectPath);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login gagal. Silakan coba lagi.';
       setError(message);
@@ -163,6 +168,40 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={showSecurityReminder}
+        onClose={() => {
+          setShowSecurityReminder(false);
+          window.location.assign(pendingRedirect);
+        }}
+        title="Pertanyaan Keamanan"
+      >
+        <div className="space-y-5">
+          <p className="text-gray-300 text-sm leading-relaxed">
+            Anda belum setting <strong className="text-cyan-300">Pertanyaan Keamanan</strong>. Silakan setting Pertanyaan Keamanan untuk memudahkan apabila lupa password.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => window.location.assign('/settings/account')}
+              className="flex-1 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-xl font-medium transition-colors cursor-pointer"
+            >
+              Setting Sekarang
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSecurityReminder(false);
+                window.location.assign(pendingRedirect);
+              }}
+              className="flex-1 py-3 bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 rounded-xl font-medium transition-colors cursor-pointer"
+            >
+              Nanti Saja
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

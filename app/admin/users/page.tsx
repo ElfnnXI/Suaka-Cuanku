@@ -40,8 +40,6 @@ export default function AdminUsersPage() {
   const [processing, setProcessing] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
-
   const isStrongPassword = (password: string) =>
     password.length >= 10 &&
     /[A-Za-z]/.test(password) &&
@@ -71,7 +69,6 @@ export default function AdminUsersPage() {
     setActionReason('');
     setNewPassword('');
     setConfirmPassword('');
-    setTotpCode('');
 
     if (action === 'delete') {
       if (!confirm(`Yakin ingin menghapus akun ${user.name}? Tindakan ini tidak dapat dibatalkan.`)) {
@@ -134,7 +131,6 @@ export default function AdminUsersPage() {
           body: JSON.stringify({
             userId: selectedUser.id,
             newPassword: newPassword,
-            totpCode,
           }),
         });
 
@@ -192,17 +188,6 @@ export default function AdminUsersPage() {
     } finally {
       setProcessing(false);
     }
-  };
-
-  const startResetPasswordMfa = async () => {
-    const res = await apiFetch('/api/auth/mfa/sensitive-action/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'ADMIN_RESET_PASSWORD' }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Gagal mengirim OTP MFA');
-    alert(data.message || 'Verifikasi authenticator siap digunakan');
   };
 
   const getRiskBadge = (level: string) => {
@@ -436,16 +421,6 @@ export default function AdminUsersPage() {
 
               {actionType === 'reset-password' ? (
                 <div className="space-y-4">
-                  <div className="bg-blue-500/10 border border-blue-500/30 text-blue-400 px-4 py-3 rounded-xl text-sm">
-                    Reset password user wajib step-up MFA admin. Siapkan verifikasi lalu isi kode authenticator Anda.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={startResetPasswordMfa}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-cyan-300 hover:bg-white/10 transition"
-                  >
-                    Siapkan Verifikasi MFA
-                  </button>
                   <div>
                     <label className="block text-sm text-gray-400 mb-2">
                       Password Baru
@@ -467,16 +442,6 @@ export default function AdminUsersPage() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Ulangi password baru"
-                      className="w-full px-4 py-3 rounded-xl focus:outline-none focus:border-cyan-500 transition bg-white/5 border border-white/10 text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-2">Kode Authenticator</label>
-                    <input
-                      type="text"
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value)}
-                      placeholder="Masukkan kode authenticator"
                       className="w-full px-4 py-3 rounded-xl focus:outline-none focus:border-cyan-500 transition bg-white/5 border border-white/10 text-white"
                     />
                   </div>

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { clearAuthCookies, withPrivateCache, getClientIp } from '@/lib/security';
-import { clearPendingMfaCookie } from '@/lib/mfa';
 import { getUserFromRequest, logSecurityEvent } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
@@ -24,7 +23,6 @@ export async function POST(request: NextRequest) {
   });
 
   clearAuthCookies(response);
-  clearPendingMfaCookie(response);
 
   return withPrivateCache(response);
 }

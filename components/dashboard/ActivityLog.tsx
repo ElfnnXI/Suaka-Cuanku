@@ -34,7 +34,6 @@ function getActionBadge(action: string): { label: string; color: string } {
   if (action === 'LOGOUT') return { label: 'Logout', color: 'bg-gray-500/15 text-gray-400 border-gray-500/30' };
   if (action.startsWith('REGISTER')) return { label: 'Register', color: 'bg-green-500/15 text-green-400 border-green-500/30' };
   if (action.includes('PASSWORD') || action.includes('CHANGE_PASSWORD')) return { label: 'Password', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
-  if (action.includes('MFA') || action.includes('TOTP') || action.includes('BACKUP')) return { label: 'MFA', color: 'bg-purple-500/15 text-purple-400 border-purple-500/30' };
   if (action.includes('DELETE')) return { label: 'Hapus', color: 'bg-red-500/15 text-red-400 border-red-500/30' };
   if (action.includes('UPDATE') || action.includes('EDIT')) return { label: 'Update', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
   if (action.includes('CREATE') || action.includes('GENERATE')) return { label: 'Buat', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };

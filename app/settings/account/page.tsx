@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
-import { Key, Lock, Loader2, User, Mail, Save, ShieldCheck, RefreshCw, Smartphone, Copy } from 'lucide-react';
+import { Key, Lock, Loader2, User, Save, ShieldCheck, Eye, EyeOff } from 'lucide-react';
+import { SECURITY_QUESTIONS } from '@/lib/security-questions';
 import { apiFetch } from '@/lib/client-api';
 import { checkPasswordPolicy, getLocalPasswordFeedback } from '@/lib/password-policy-client';
 
@@ -11,16 +12,7 @@ interface UserProfile {
   name: string;
   email: string;
   role: string;
-  mfaTotpEnabled: boolean;
-  mfaEnrolledAt?: string | null;
 }
-
-type SensitiveAction = 'UPDATE_PROFILE' | 'CHANGE_PASSWORD' | 'REGENERATE_BACKUP_CODES' | 'REENROLL_TOTP';
-
-type ReEnrollSetup = {
-  manualEntryKey: string;
-  qrCodeDataUrl: string;
-};
 
 export default function AccountSettingsPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -39,28 +31,10 @@ export default function AccountSettingsPage() {
   const [passwordFeedback, setPasswordFeedback] = useState('');
   const [passwordValid, setPasswordValid] = useState(false);
   const [passwordChecking, setPasswordChecking] = useState(false);
-  const [backupStatus, setBackupStatus] = useState({ total: 8, available: 0 });
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [backupLoading, setBackupLoading] = useState(false);
-  const [backupError, setBackupError] = useState('');
-  const [backupSuccess, setBackupSuccess] = useState('');
-  const [reEnrollSetup, setReEnrollSetup] = useState<ReEnrollSetup | null>(null);
-  const [reEnrollNewCode, setReEnrollNewCode] = useState('');
-  const [reEnrollLoading, setReEnrollLoading] = useState(false);
-  const [reEnrollError, setReEnrollError] = useState('');
-  const [reEnrollSuccess, setReEnrollSuccess] = useState('');
-  const [mfaForm, setMfaForm] = useState<Record<SensitiveAction, { totpCode: string }>>({
-    UPDATE_PROFILE: { totpCode: '' },
-    CHANGE_PASSWORD: { totpCode: '' },
-    REGENERATE_BACKUP_CODES: { totpCode: '' },
-    REENROLL_TOTP: { totpCode: '' },
-  });
-  const [mfaActionLoading, setMfaActionLoading] = useState<Record<SensitiveAction, boolean>>({
-    UPDATE_PROFILE: false,
-    CHANGE_PASSWORD: false,
-    REGENERATE_BACKUP_CODES: false,
-    REENROLL_TOTP: false,
-  });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [sqShowAnswers, setSqShowAnswers] = useState<Record<string, boolean>>({});
 
   const passwordPolicyText = 'Minimal 10 karakter. Hindari password umum atau yang pernah bocor.';
 
@@ -136,63 +110,6 @@ export default function AccountSettingsPage() {
     };
   }, [newPassword]);
 
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    apiFetch('/api/auth/mfa/backup-codes')
-      .then(async (response) => {
-        const data = await response.json();
-        if (response.ok) {
-          setBackupStatus(data);
-        }
-      })
-      .catch(() => undefined);
-  }, [user]);
-
-  const requestSensitiveAction = async (action: SensitiveAction) => {
-    setMfaActionLoading((current) => ({ ...current, [action]: true }));
-
-    try {
-      const response = await apiFetch('/api/auth/mfa/sensitive-action/start', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal memulai verifikasi MFA');
-      }
-
-      const successMessage = data.message || 'Verifikasi authenticator siap digunakan.';
-      if (action === 'UPDATE_PROFILE') {
-        setProfileSuccess(successMessage);
-      } else if (action === 'CHANGE_PASSWORD') {
-        setPasswordSuccess(successMessage);
-      } else if (action === 'REGENERATE_BACKUP_CODES') {
-        setBackupSuccess(successMessage);
-      } else {
-        setReEnrollSuccess(successMessage);
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Gagal memulai verifikasi MFA';
-      if (action === 'UPDATE_PROFILE') {
-        setProfileError(message);
-      } else if (action === 'CHANGE_PASSWORD') {
-        setPasswordError(message);
-      } else if (action === 'REGENERATE_BACKUP_CODES') {
-        setBackupError(message);
-      } else {
-        setReEnrollError(message);
-      }
-    } finally {
-      setMfaActionLoading((current) => ({ ...current, [action]: false }));
-    }
-  };
-
   const handleUpdateProfile = async (event: React.FormEvent) => {
     event.preventDefault();
     setProfileError('');
@@ -206,7 +123,6 @@ export default function AccountSettingsPage() {
         body: JSON.stringify({
           name: profileName,
           email: profileEmail,
-          ...mfaForm.UPDATE_PROFILE,
         }),
       });
       const data = await response.json();
@@ -216,10 +132,6 @@ export default function AccountSettingsPage() {
 
       setProfileSuccess(data.message);
       setUser(data.user);
-      setMfaForm((current) => ({
-        ...current,
-        UPDATE_PROFILE: { totpCode: '' },
-      }));
     } catch (error: unknown) {
       setProfileError(error instanceof Error ? error.message : 'Gagal memperbarui profil');
     } finally {
@@ -251,7 +163,6 @@ export default function AccountSettingsPage() {
           currentPassword,
           newPassword,
           confirmPassword,
-          ...mfaForm.CHANGE_PASSWORD,
         }),
       });
       const data = await response.json();
@@ -263,10 +174,6 @@ export default function AccountSettingsPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setMfaForm((current) => ({
-        ...current,
-        CHANGE_PASSWORD: { totpCode: '' },
-      }));
     } catch (error: unknown) {
       setPasswordError(error instanceof Error ? error.message : 'Gagal mengubah password');
     } finally {
@@ -274,102 +181,52 @@ export default function AccountSettingsPage() {
     }
   };
 
-  const handleGenerateBackupCodes = async () => {
-    setBackupError('');
-    setBackupSuccess('');
-    setBackupLoading(true);
+  const [sqError, setSqError] = useState('');
+  const [sqSuccess, setSqSuccess] = useState('');
+  const [sqLoading, setSqLoading] = useState(false);
+  const [sqAnswers, setSqAnswers] = useState<Record<string, string>>({});
+  const [sqFetched, setSqFetched] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    apiFetch('/api/auth/security-questions')
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setSqFetched(data.questions?.map((q: { key: string }) => q.key) ?? []);
+        }
+      })
+      .catch(() => undefined);
+  }, [user]);
+
+  const handleSaveSecurityQuestions = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSqError('');
+    setSqSuccess('');
+    setSqLoading(true);
 
     try {
-      const response = await apiFetch('/api/auth/mfa/backup-codes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mfaForm.REGENERATE_BACKUP_CODES),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal membuat backup codes');
-      }
-
-      setBackupCodes(data.codes ?? []);
-      setBackupStatus({ total: 8, available: data.codes?.length ?? 0 });
-      setBackupSuccess(data.message);
-      setMfaForm((current) => ({
-        ...current,
-        REGENERATE_BACKUP_CODES: { totpCode: '' },
+      const items = SECURITY_QUESTIONS.map((q) => ({
+        question: q.key,
+        answer: sqAnswers[q.key] || '',
       }));
-    } catch (error: unknown) {
-      setBackupError(error instanceof Error ? error.message : 'Gagal membuat backup codes');
-    } finally {
-      setBackupLoading(false);
-    }
-  };
 
-  const handlePrepareReEnroll = async () => {
-    setReEnrollError('');
-    setReEnrollSuccess('');
-    setReEnrollLoading(true);
-
-    try {
-      const response = await apiFetch('/api/auth/mfa/re-enroll', {
-        method: 'POST',
+      const response = await apiFetch('/api/auth/security-questions', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mfaForm.REENROLL_TOTP),
+        body: JSON.stringify(items),
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal memulai re-enroll authenticator');
-      }
+      if (!response.ok) throw new Error(data.error || 'Gagal menyimpan pertanyaan keamanan');
 
-      setReEnrollSetup({
-        manualEntryKey: data.manualEntryKey,
-        qrCodeDataUrl: data.qrCodeDataUrl,
-      });
-      setReEnrollSuccess(data.message);
-    } catch (error: unknown) {
-      setReEnrollError(error instanceof Error ? error.message : 'Gagal memulai re-enroll authenticator');
+      setSqFetched(SECURITY_QUESTIONS.map((q) => q.key));
+      setSqSuccess(data.message);
+      setSqAnswers({});
+    } catch (err: unknown) {
+      setSqError(err instanceof Error ? err.message : 'Gagal menyimpan pertanyaan keamanan');
     } finally {
-      setReEnrollLoading(false);
+      setSqLoading(false);
     }
-  };
-
-  const handleFinalizeReEnroll = async () => {
-    setReEnrollError('');
-    setReEnrollSuccess('');
-    setReEnrollLoading(true);
-
-    try {
-      const response = await apiFetch('/api/auth/mfa/re-enroll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newTotpCode: reEnrollNewCode }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal mengaktifkan authenticator baru');
-      }
-
-      setReEnrollSuccess(data.message);
-      setReEnrollSetup(null);
-      setReEnrollNewCode('');
-      setMfaForm((current) => ({
-        ...current,
-        REENROLL_TOTP: { totpCode: '' },
-      }));
-      setUser((current) => current ? { ...current, mfaTotpEnabled: true } : current);
-    } catch (error: unknown) {
-      setReEnrollError(error instanceof Error ? error.message : 'Gagal mengaktifkan authenticator baru');
-    } finally {
-      setReEnrollLoading(false);
-    }
-  };
-
-  const copyBackupCodes = async () => {
-    if (!backupCodes.length) {
-      return;
-    }
-
-    await navigator.clipboard.writeText(backupCodes.join('\n'));
-    setBackupSuccess('Backup codes berhasil disalin. Simpan di tempat aman.');
   };
 
   if (loading || !user) {
@@ -390,7 +247,7 @@ export default function AccountSettingsPage() {
           <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
             Pengaturan Akun
           </h1>
-          <p className="text-gray-400">Kelola profil, password, backup codes, dan authenticator Anda.</p>
+          <p className="text-gray-400">Kelola profil, password, dan pertanyaan keamanan Anda.</p>
         </div>
 
         <div className="glossy-card rounded-2xl p-6 space-y-4">
@@ -400,13 +257,9 @@ export default function AccountSettingsPage() {
           </div>
           {profileError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">{profileError}</div>}
           {profileSuccess && <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl">{profileSuccess}</div>}
-          <button type="button" onClick={() => requestSensitiveAction('UPDATE_PROFILE')} className="rounded-xl bg-white/5 px-4 py-2 text-sm text-cyan-300 hover:bg-white/10" disabled={mfaActionLoading.UPDATE_PROFILE}>
-            {mfaActionLoading.UPDATE_PROFILE ? 'Menyiapkan verifikasi...' : 'Siapkan verifikasi authenticator untuk ubah profil'}
-          </button>
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Nama lengkap" required />
             <input value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Email" type="email" required />
-            <input value={mfaForm.UPDATE_PROFILE.totpCode} onChange={(event) => setMfaForm((current) => ({ ...current, UPDATE_PROFILE: { ...current.UPDATE_PROFILE, totpCode: event.target.value } }))} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Kode authenticator" required />
             <button type="submit" disabled={profileLoading} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-xl font-medium flex items-center justify-center gap-2">
               {profileLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Memproses...</> : <><Save className="w-4 h-4" />Simpan Perubahan</>}
             </button>
@@ -420,17 +273,28 @@ export default function AccountSettingsPage() {
           </div>
           {passwordError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">{passwordError}</div>}
           {passwordSuccess && <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl">{passwordSuccess}</div>}
-          <button type="button" onClick={() => requestSensitiveAction('CHANGE_PASSWORD')} className="rounded-xl bg-white/5 px-4 py-2 text-sm text-cyan-300 hover:bg-white/10" disabled={mfaActionLoading.CHANGE_PASSWORD}>
-            {mfaActionLoading.CHANGE_PASSWORD ? 'Menyiapkan verifikasi...' : 'Siapkan verifikasi authenticator untuk ubah password'}
-          </button>
           <form onSubmit={handleChangePassword} className="space-y-4">
-            <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Password saat ini" required />
+            <div className="relative">
+              <input type={showCurrentPassword ? 'text' : 'password'} value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Password saat ini" required />
+              <button type="button" onClick={() => setShowCurrentPassword(!showCurrentPassword)} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer" aria-label={showCurrentPassword ? 'Sembunyikan password' : 'Tampilkan password'}>
+                {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
             <div>
-              <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder={passwordPolicyText} required />
+              <div className="relative">
+                <input type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white" placeholder={passwordPolicyText} required />
+                <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer" aria-label={showNewPassword ? 'Sembunyikan password' : 'Tampilkan password'}>
+                  {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
               {newPassword && <p className={`mt-2 text-xs ${passwordValid ? 'text-green-400' : 'text-amber-400'}`}>{passwordFeedback}</p>}
             </div>
-            <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Konfirmasi password baru" required />
-            <input value={mfaForm.CHANGE_PASSWORD.totpCode} onChange={(event) => setMfaForm((current) => ({ ...current, CHANGE_PASSWORD: { ...current.CHANGE_PASSWORD, totpCode: event.target.value } }))} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Kode authenticator" required />
+            <div className="relative">
+              <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Konfirmasi password baru" required />
+              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer" aria-label={showConfirmPassword ? 'Sembunyikan password' : 'Tampilkan password'}>
+                {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
             <button type="submit" disabled={passwordLoading || passwordChecking || !passwordValid} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-xl font-medium flex items-center justify-center gap-2">
               {passwordLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Memproses...</> : <><Lock className="w-4 h-4" />Ubah Password</>}
             </button>
@@ -440,58 +304,48 @@ export default function AccountSettingsPage() {
         <div className="glossy-card rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-cyan-400" />
-            <h2 className="text-xl font-bold text-white">Backup Codes MFA</h2>
+            <h2 className="text-xl font-bold text-white">Pertanyaan Keamanan</h2>
           </div>
-          <p className="text-gray-400">Backup code tersisa: {backupStatus.available} dari {backupStatus.total}</p>
-          {backupError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">{backupError}</div>}
-          {backupSuccess && <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl">{backupSuccess}</div>}
-          <button type="button" onClick={() => requestSensitiveAction('REGENERATE_BACKUP_CODES')} className="rounded-xl bg-white/5 px-4 py-2 text-sm text-cyan-300 hover:bg-white/10" disabled={mfaActionLoading.REGENERATE_BACKUP_CODES}>
-            {mfaActionLoading.REGENERATE_BACKUP_CODES ? 'Menyiapkan verifikasi...' : 'Siapkan verifikasi authenticator untuk buat ulang backup codes'}
-          </button>
-          <input value={mfaForm.REGENERATE_BACKUP_CODES.totpCode} onChange={(event) => setMfaForm((current) => ({ ...current, REGENERATE_BACKUP_CODES: { ...current.REGENERATE_BACKUP_CODES, totpCode: event.target.value } }))} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Kode authenticator" />
-          <button type="button" onClick={handleGenerateBackupCodes} disabled={backupLoading} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-xl font-medium flex items-center justify-center gap-2">
-            {backupLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Memproses...</> : <><RefreshCw className="w-4 h-4" />Buat Ulang Backup Codes</>}
-          </button>
-          {backupCodes.length > 0 && (
-            <div className="space-y-3">
-              <div className="grid md:grid-cols-2 gap-2">
-                {backupCodes.map((code) => (
-                  <div key={code} className="rounded-xl bg-slate-900/60 px-3 py-2 font-mono text-cyan-200">{code}</div>
-                ))}
+          <p className="text-gray-400 text-sm">
+            {sqFetched.length === 5
+              ? 'Pertanyaan keamanan sudah diatur. Jawaban disimpan dengan aman (terenkripsi).'
+              : 'Siapkan pertanyaan keamanan untuk dapat mereset password sendiri.'}
+          </p>
+          {sqError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">{sqError}</div>}
+          {sqSuccess && <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl text-sm">{sqSuccess}</div>}
+          <form onSubmit={handleSaveSecurityQuestions} className="space-y-4">
+            {SECURITY_QUESTIONS.map((q) => (
+              <div key={q.key} className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-gray-300">
+                  {q.label}
+                  {sqFetched.includes(q.key) && <span className="ml-2 text-green-400 text-xs">(sudah diatur)</span>}
+                </label>
+                <div className="relative">
+                  <input
+                    type={sqShowAnswers[q.key] ? 'text' : 'password'}
+                    value={sqAnswers[q.key] ?? ''}
+                    onChange={(e) => setSqAnswers((prev) => ({ ...prev, [q.key]: e.target.value }))}
+                    placeholder={sqFetched.includes(q.key) ? 'Biarkan kosong jika tidak ingin mengubah' : q.placeholder}
+                    inputMode={q.type === 'digit' ? 'numeric' : 'text'}
+                    className="w-full px-4 py-3 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSqShowAnswers((prev) => ({ ...prev, [q.key]: !prev[q.key] }))}
+                    className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer"
+                    aria-label={sqShowAnswers[q.key] ? 'Sembunyikan jawaban' : 'Tampilkan jawaban'}
+                  >
+                    {sqShowAnswers[q.key] ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
-              <button type="button" onClick={copyBackupCodes} className="rounded-xl bg-white/5 px-4 py-2 text-sm text-cyan-300 hover:bg-white/10 inline-flex items-center gap-2">
-                <Copy className="w-4 h-4" />
-                Salin Backup Codes
-              </button>
-            </div>
-          )}
+            ))}
+            <button type="submit" disabled={sqLoading} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-xl font-medium">
+              {sqLoading ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Menyimpan...</> : 'Simpan Pertanyaan Keamanan'}
+            </button>
+          </form>
         </div>
 
-        <div className="glossy-card rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <Smartphone className="w-6 h-6 text-cyan-400" />
-            <h2 className="text-xl font-bold text-white">Re-enroll Authenticator</h2>
-          </div>
-          {reEnrollError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">{reEnrollError}</div>}
-          {reEnrollSuccess && <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl">{reEnrollSuccess}</div>}
-          <button type="button" onClick={() => requestSensitiveAction('REENROLL_TOTP')} className="rounded-xl bg-white/5 px-4 py-2 text-sm text-cyan-300 hover:bg-white/10" disabled={mfaActionLoading.REENROLL_TOTP}>
-            {mfaActionLoading.REENROLL_TOTP ? 'Menyiapkan verifikasi...' : 'Siapkan verifikasi authenticator untuk ganti authenticator'}
-          </button>
-          <input value={mfaForm.REENROLL_TOTP.totpCode} onChange={(event) => setMfaForm((current) => ({ ...current, REENROLL_TOTP: { ...current.REENROLL_TOTP, totpCode: event.target.value } }))} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white" placeholder="Kode authenticator saat ini" />
-          <button type="button" onClick={handlePrepareReEnroll} disabled={reEnrollLoading} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-xl font-medium">
-            {reEnrollLoading ? 'Memproses...' : 'Verifikasi dan Siapkan Authenticator Baru'}
-          </button>
-          {reEnrollSetup && (
-            <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100 space-y-4">
-              <img src={reEnrollSetup.qrCodeDataUrl} alt="QR authenticator baru" className="mx-auto rounded-xl bg-white p-3" />
-              <div className="break-all rounded-lg bg-slate-900/60 px-3 py-2 font-mono text-cyan-200">{reEnrollSetup.manualEntryKey}</div>
-              <input value={reEnrollNewCode} onChange={(event) => setReEnrollNewCode(event.target.value)} className="w-full px-4 py-3 bg-slate-900/60 border border-white/10 rounded-xl text-white" placeholder="Masukkan kode dari authenticator baru" />
-              <button type="button" onClick={handleFinalizeReEnroll} disabled={reEnrollLoading} className="w-full py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 text-white rounded-xl font-medium">
-                Aktifkan Authenticator Baru
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </DashboardLayout>
   );

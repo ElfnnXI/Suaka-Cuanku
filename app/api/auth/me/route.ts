@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { startAutomaticBackupScheduler } from '@/lib/automatic-backup';
 import { requireAuth } from '@/lib/auth';
 import { ensureCsrfCookie, withPrivateCache } from '@/lib/security';
 
 export async function GET(request: NextRequest) {
   try {
+    startAutomaticBackupScheduler();
     const authResult = await requireAuth(request);
     if (authResult instanceof Response) {
       return withPrivateCache(authResult);
     }
 
-    const { sessionVersion: _sessionVersion, ...safeUser } = authResult.user;
+    const { sessionVersion, ...safeUser } = authResult.user;
+    void sessionVersion;
     const response = NextResponse.json({ user: safeUser });
     const csrfToken = await ensureCsrfCookie(response);
     response.headers.set('x-csrf-token', csrfToken);

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { AnimatedOrbs } from '@/components/AnimatedOrbs';
 import ActivityLog from '@/components/dashboard/ActivityLog';
-import { Users, DollarSign, TrendingUp, Clock, Wallet, AlertCircle } from 'lucide-react';
+import { Users, DollarSign, TrendingUp, Clock, Wallet, AlertCircle, Database } from 'lucide-react';
 import { apiFetch } from '@/lib/client-api';
 
 interface FinancialStats {
@@ -206,7 +206,7 @@ export default function AdminOverview() {
         <ActivityLog role="ADMIN" />
 
         {/* Quick Actions */}
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           <a
             href="/admin/payments"
             className="backdrop-blur-sm bg-gray-800/60 border border-gray-700/50 rounded-2xl p-6 shadow-xl hover:border-cyan-500/50 transition-all duration-300 block group"
@@ -236,6 +236,23 @@ export default function AdminOverview() {
                 <div className="font-semibold text-white mb-1">Review Pinjaman</div>
                 <div className="text-sm text-gray-400">
                   {stats?.pendingLoans || 0} pinjaman menunggu persetujuan
+                </div>
+              </div>
+            </div>
+          </a>
+
+          <a
+            href="/admin/backup"
+            className="backdrop-blur-sm bg-gray-800/60 border border-gray-700/50 rounded-2xl p-6 shadow-xl hover:border-emerald-500/50 transition-all duration-300 block group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-emerald-500/30 to-emerald-600/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Database className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold text-white mb-1">Backup Database</div>
+                <div className="text-sm text-gray-400">
+                  Buat snapshot data dengan verifikasi password admin
                 </div>
               </div>
             </div>

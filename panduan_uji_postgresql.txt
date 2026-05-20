@@ -1,0 +1,352 @@
+PANDUAN UJI POSTGRESQL
+Project: Suaka Cuanku
+Tanggal: 2026-05-20
+
+Tujuan dokumen ini adalah memberi urutan langkah praktikum singkat untuk menguji aspek keamanan, constraint, backup, restore, dan konfigurasi PostgreSQL pada project ini.
+
+PRASYARAT
+- PostgreSQL server aktif
+- Database project sudah tersedia dan `DATABASE_URL` valid
+- Dependensi project sudah terpasang
+- Anda berada di root project `suaka-cuanku`
+
+PERSIAPAN AWAL
+1. Pastikan schema database terbaru sudah diterapkan:
+   - `npm run db:push`
+
+2. Terapkan hardening constraint PostgreSQL:
+   - `npm run db:harden`
+
+3. Jika ingin menjalankan query audit SQL:
+   - `psql "$DATABASE_URL" -f prisma/postgres-security-checks.sql`
+
+4. Jika ingin menjalankan audit host Windows:
+   - `powershell -ExecutionPolicy Bypass -File prisma/postgres-security-checks.ps1`
+
+CATATAN NAMA TABEL
+- Tabel user aplikasi: `"User"`
+- Tabel pinjaman aplikasi: `"Loan"`
+- Tabel pembayaran aplikasi: `"Payment"`
+- Tabel komentar: `"Comment"`
+- Tabel audit: `"AuditLog"`
+- Tabel pertanyaan keamanan: `"security_questions"`
+- Tabel rate limit: `"rate_limit_entries"`
+- Tabel backup admin: `"admin_backup_settings"`
+
+1. UJI USER ANONIM
+Tujuan:
+- Memastikan tidak ada role anonim di PostgreSQL.
+
+Langkah:
+1. Jalankan query:
+   ```sql
+   SELECT rolname
+   FROM pg_roles
+   WHERE rolname = '' OR lower(rolname) = 'anonymous';
+   ```
+
+Hasil yang diharapkan:
+- Tidak ada baris yang muncul.
+
+Interpretasi:
+- Jika kosong, tidak ada role anonim.
+- Jika ada hasil, role tersebut harus ditinjau dan dihapus oleh admin PostgreSQL.
+
+2. UJI USER DENGAN ALL PRIVILEGES / SUPERUSER
+Tujuan:
+- Memastikan user aplikasi bukan superuser.
+
+Langkah:
+1. Jalankan query:
+   ```sql
+   SELECT usename, usesuper
+   FROM pg_user
+   WHERE usename IN ('postgres', 'app_user');
+   ```
+
+2. Jika nama user aplikasi berbeda, ganti `app_user` dengan nama user yang benar.
+
+Hasil yang diharapkan:
+- User aplikasi seharusnya `usesuper = false`.
+- Hanya akun administratif database yang boleh `usesuper = true`.
+
+Interpretasi:
+- Jika user aplikasi ternyata superuser, itu terlalu berisiko.
+
+3. UJI PASSWORD HARUS HASH, BUKAN PLAIN TEXT
+Tujuan:
+- Memastikan nilai password di tabel `"User"` disimpan dalam format bcrypt.
+
+Langkah:
+1. Jalankan query:
+   ```sql
+   SELECT id, email, password
+   FROM "User"
+   WHERE password !~ '^\$2[aby]\$[0-9]{2}\$';
+   ```
+
+2. Jalankan juga pengecekan jawaban pertanyaan keamanan:
+   ```sql
+   SELECT id, "userId", question, answer
+   FROM security_questions
+   WHERE answer !~ '^\$2[aby]\$[0-9]{2}\$';
+   ```
+
+Hasil yang diharapkan:
+- Tidak ada baris yang muncul.
+
+Interpretasi:
+- Jika kosong, hash tersimpan dengan benar.
+- Jika muncul hasil, ada data sensitif yang tidak tersimpan sebagai bcrypt.
+
+Catatan implementasi project:
+- Project sudah memiliki constraint database agar password dan answer mengikuti pola bcrypt.
+
+4. UJI FOREIGN KEY PADA TABEL PINJAMAN
+Tujuan:
+- Memastikan tabel pinjaman memiliki foreign key ke user.
+
+Adaptasi:
+- Di project ini tabel pinjaman bernama `"Loan"`.
+
+Langkah:
+1. Jalankan query:
+   ```sql
+   SELECT
+     tc.constraint_name,
+     tc.table_name,
+     kcu.column_name,
+     ccu.table_name AS foreign_table_name,
+     ccu.column_name AS foreign_column_name
+   FROM information_schema.table_constraints tc
+   JOIN information_schema.key_column_usage kcu
+     ON tc.constraint_name = kcu.constraint_name
+   JOIN information_schema.constraint_column_usage ccu
+     ON ccu.constraint_name = tc.constraint_name
+   WHERE tc.constraint_type = 'FOREIGN KEY'
+     AND tc.table_name = 'Loan';
+   ```
+
+Hasil yang diharapkan:
+- Muncul FK dari `Loan.userId` ke `User.id`.
+
+Interpretasi:
+- Jika hasil ada, relasi pinjaman ke user sudah benar.
+
+5. UJI UNIQUE PADA KOLOM EMAIL
+Tujuan:
+- Memastikan `User.email` memiliki constraint unique dan panjang `VARCHAR(100)`.
+
+Langkah A, cek UNIQUE:
+1. Jalankan query:
+   ```sql
+   SELECT constraint_name
+   FROM information_schema.constraint_column_usage
+   WHERE table_name = 'User' AND column_name = 'email'
+   INTERSECT
+   SELECT constraint_name
+   FROM information_schema.table_constraints
+   WHERE constraint_type = 'UNIQUE';
+   ```
+
+Hasil yang diharapkan:
+- Minimal ada satu nama constraint.
+
+Langkah B, cek tipe kolom:
+1. Jalankan query:
+   ```sql
+   SELECT column_name, data_type, character_maximum_length
+   FROM information_schema.columns
+   WHERE table_name = 'User' AND column_name = 'email';
+   ```
+
+Hasil yang diharapkan:
+- `data_type` berupa `character varying`
+- `character_maximum_length` = `100`
+
+6. UJI BACKUP DAN RESTORE
+Tujuan:
+- Memastikan project memiliki fitur backup dan restore.
+
+Langkah A, cek dari aplikasi:
+1. Login sebagai admin.
+2. Buka admin dashboard.
+3. Masuk ke menu `Backup Database`.
+4. Isi folder backup, nama file, dan password admin.
+5. Jalankan backup manual.
+
+Hasil yang diharapkan:
+- Muncul pesan sukses backup.
+- File JSON backup terbentuk di folder yang ditentukan.
+
+Langkah B, cek konfigurasi backup otomatis:
+1. Di halaman yang sama, aktifkan backup otomatis.
+2. Pilih interval 1, 3, atau 7 hari.
+3. Simpan pengaturan dengan password admin.
+
+Hasil yang diharapkan:
+- Pengaturan tersimpan.
+- Status backup menampilkan interval dan jadwal berikutnya.
+
+Langkah C, uji restore:
+1. Di halaman `Backup Database`, isi folder file backup, nama file backup, dan password admin.
+2. Jalankan restore.
+
+Hasil yang diharapkan:
+- Muncul pesan sukses restore.
+- Database aktif diganti dengan isi file backup tersebut.
+
+Langkah D, cek tabel pendukung restore:
+1. Jalankan query:
+   ```sql
+   SELECT table_name
+   FROM information_schema.tables
+   WHERE table_schema = 'public'
+     AND table_name = 'admin_backup_settings';
+   ```
+
+Hasil yang diharapkan:
+- Tabel `admin_backup_settings` ada.
+
+7. UJI PORT POSTGRESQL TERBUKA
+Tujuan:
+- Memastikan port PostgreSQL dapat dicek dan server mendengarkan dengan benar.
+
+Langkah A, via SQL:
+1. Jalankan:
+   ```sql
+   SHOW port;
+   SHOW listen_addresses;
+   ```
+
+Hasil yang diharapkan:
+- Port biasanya `5432`
+- `listen_addresses` sesuai konfigurasi server
+
+Langkah B, via PowerShell:
+1. Jalankan:
+   ```powershell
+   Get-NetTCPConnection -LocalPort 5432 -State Listen
+   ```
+
+Hasil yang diharapkan:
+- Ada listener aktif di port 5432 jika PostgreSQL berjalan di host itu.
+
+8. UJI DATA SENSITIF TERENKRIPSI / TERHASH
+Tujuan:
+- Memastikan password dan jawaban keamanan tidak tersimpan dalam bentuk mentah.
+
+Langkah:
+1. Jalankan query gabungan:
+   ```sql
+   SELECT 'User.password' AS column_name, COUNT(*) AS invalid_rows
+   FROM "User"
+   WHERE password !~ '^\$2[aby]\$[0-9]{2}\$'
+   UNION ALL
+   SELECT 'security_questions.answer' AS column_name, COUNT(*) AS invalid_rows
+   FROM security_questions
+   WHERE answer !~ '^\$2[aby]\$[0-9]{2}\$';
+   ```
+
+Hasil yang diharapkan:
+- `invalid_rows = 0` untuk semua baris hasil.
+
+Langkah tambahan, cek SSL transport:
+1. Jalankan:
+   ```sql
+   SHOW ssl;
+   SELECT * FROM pg_stat_ssl WHERE pid = pg_backend_pid();
+   ```
+
+Hasil yang diharapkan:
+- Jika deployment mewajibkan SSL, nilai `ssl` sebaiknya `on`.
+
+9. UJI LOG QUERY / LOGGING
+Tujuan:
+- Memastikan konfigurasi logging PostgreSQL dapat diperiksa.
+
+Langkah:
+1. Jalankan:
+   ```sql
+   SHOW logging_collector;
+   SHOW log_statement;
+   SHOW log_min_duration_statement;
+   ```
+
+Hasil yang diharapkan:
+- Nilai tampil sesuai konfigurasi server.
+
+Interpretasi umum:
+- `logging_collector = on` berarti PostgreSQL mengumpulkan log ke file.
+- `log_statement = none|ddl|mod|all`
+- `log_min_duration_statement = -1` berarti mati, `0` berarti semua query dicatat.
+
+10. UJI INDEX DAN CONSTRAINT TAMBAHAN PROJECT
+Tujuan:
+- Memastikan penguatan schema yang diterapkan pada project ini benar-benar ada.
+
+Langkah A, cek index:
+1. Jalankan:
+   ```sql
+   SELECT tablename, indexname
+   FROM pg_indexes
+   WHERE schemaname = 'public'
+     AND tablename IN ('User', 'Loan', 'Payment', 'AuditLog', 'security_questions', 'admin_backup_settings')
+   ORDER BY tablename, indexname;
+   ```
+
+Hasil yang diharapkan:
+- Terlihat index tambahan pada:
+  - `User(role, status, createdAt)`
+  - `Loan(userId, status, createdAt)`
+  - `Loan(status, createdAt)`
+  - `Payment(loanId, status, paidAt)`
+  - `Payment(status, paidAt)`
+  - `AuditLog(auditorId, createdAt)`
+  - `SecurityQuestion(userId)`
+
+Langkah B, cek constraint hardening:
+1. Jalankan:
+   ```sql
+   SELECT conname, contype
+   FROM pg_constraint
+   WHERE conname IN (
+     'user_password_bcrypt_chk',
+     'security_questions_answer_bcrypt_chk',
+     'admin_backup_settings_interval_days_chk'
+   );
+   ```
+
+Hasil yang diharapkan:
+- Ketiga constraint tampil.
+
+11. UJI SCRIPT AUDIT OTOMATIS PROJECT
+Tujuan:
+- Memastikan file audit yang ditambahkan ke project bisa dipakai.
+
+Langkah:
+1. Jalankan:
+   - `psql "$DATABASE_URL" -f prisma/postgres-security-checks.sql`
+2. Jika di Windows, jalankan juga:
+   - `powershell -ExecutionPolicy Bypass -File prisma/postgres-security-checks.ps1`
+
+Hasil yang diharapkan:
+- Semua bagian audit tampil.
+- Bagian yang ideal tidak menunjukkan temuan bermasalah.
+
+RINGKASAN HASIL IDEAL
+Jika konfigurasi dan data sehat, hasil ideal praktikum adalah:
+- Tidak ada role anonim
+- User aplikasi bukan superuser
+- Password user dan jawaban keamanan seluruhnya hash bcrypt
+- FK `Loan -> User` dan `Payment -> Loan` ada
+- `User.email` unik dan panjang maksimal 100
+- Fitur backup dan restore berjalan dari admin dashboard
+- Port PostgreSQL dapat dicek
+- SSL/logging/archive bisa diinspeksi
+- Index tambahan dan constraint hardening tersedia
+
+CATATAN PENTING
+- Sebagian poin adalah level aplikasi/schema, jadi bisa dipenuhi langsung oleh repo ini.
+- Sebagian lain adalah level server/OS, jadi repo ini hanya bisa menyediakan query/skrip auditnya.
+- Untuk hasil akhir production, pengecekan harus dilakukan di environment PostgreSQL yang benar-benar dipakai saat deploy.

@@ -1,0 +1,742 @@
+ANALISIS DATABASE PROJECT SUAKA CUANKU
+Tanggal analisis: 2026-05-20
+
+1. GAMBARAN UMUM
+Project ini menggunakan PostgreSQL sebagai database utama melalui Prisma ORM.
+Sumber definisi skema berada di file `prisma/schema.prisma`.
+Model inti yang aktif pada skema saat ini:
+- User
+- Loan
+- Payment
+- Comment
+- AuditLog
+- RateLimitEntry
+- SecurityQuestion
+- AdminBackupSetting
+
+Arsitektur datanya relatif sederhana dan terpusat pada tabel `User` sebagai entitas induk untuk identitas, role, status akun, histori pinjaman, audit log, pertanyaan keamanan, dan pengaturan backup admin.
+
+2. ENUM DAN DOMAIN NILAI
+Enum yang dipakai:
+- Role: USER, ADMIN, AUDITOR
+- UserStatus: ACTIVE, SUSPENDED, BLOCKED
+- RiskLevel: LOW, MEDIUM, HIGH
+- LoanStatus: PENDING, APPROVED, REJECTED, PAID
+- PaymentStatus: PENDING, PAID, REJECTED
+
+Kelebihan:
+- Nilai state utama sudah dibatasi oleh enum, sehingga lebih aman dibanding string bebas.
+
+Catatan:
+- Tidak ada check constraint untuk angka seperti `loan.amount > 0`, `interest between 0 and 100`, atau `intervalDays in (1,3,7)` di level database. Saat ini validasi itu dominan ada di level aplikasi.
+
+3. STRUKTUR TABEL, PK, FK, DAN RELASI
+
+3.1. Tabel `User`
+Primary key:
+- `id` String UUID
+
+Kolom penting:
+- `email` UNIQUE
+- `password` menyimpan hash bcrypt
+- `sessionVersion` untuk invalidasi sesi/token
+- `role` enum Role
+- `status` enum UserStatus
+- `riskLevel`, `riskReason`
+- `loanLimit`
+- `createdAt`, `updatedAt`
+
+Relasi:
+- 1 User -> many Loan
+- 1 User -> many AuditLog
+- 1 User -> many SecurityQuestion
+- 1 User -> 1 AdminBackupSetting
+
+Catatan:
+- Ini adalah tabel sentral sistem.
+- Semua kontrol akses praktis bergantung pada kolom `role` dan `status` di tabel ini.
+
+3.2. Tabel `Loan`
+Primary key:
+- `id` UUID
+
+Foreign key:
+- `userId` -> `User.id` ON DELETE CASCADE
+
+Relasi:
+- many Loan -> 1 User
+- 1 Loan -> many Payment
+
+Catatan:
+- Status pinjaman dilacak lewat `LoanStatus`.
+- Bunga dan durasi disimpan per record pinjaman, yang bagus untuk audit historis.
+
+3.3. Tabel `Payment`
+Primary key:
+- `id` UUID
+
+Foreign key:
+- `loanId` -> `Loan.id` ON DELETE CASCADE
+
+Relasi:
+- many Payment -> 1 Loan
+
+Catatan:
+- Pembayaran adalah child entity dari pinjaman.
+- Tidak ada constraint yang memastikan jumlah pembayaran tidak melebihi kewajiban pinjaman; itu dihitung di aplikasi.
+
+3.4. Tabel `Comment`
+Primary key:
+- `id` UUID
+
+Relasi:
+- Tidak memiliki FK
+
+Catatan:
+- Komentar bersifat standalone.
+- Karena tidak terkait ke `User`, identitas komentar murni berdasarkan input nama/email.
+
+3.5. Tabel `AuditLog`
+Primary key:
+- `id` UUID
+
+Foreign key:
+- `auditorId` -> `User.id` ON DELETE CASCADE
+
+Relasi:
+- many AuditLog -> 1 User
+
+Catatan penting:
+- Nama kolom `auditorId` menyesatkan, karena implementasi memakainya bukan hanya untuk auditor, tetapi juga untuk admin dan event keamanan umum.
+- Secara konsep, kolom ini lebih tepat dinamai `actorId`.
+
+3.6. Tabel `RateLimitEntry`
+Primary key:
+- `key` String
+
+Relasi:
+- Tidak ada FK
+
+Catatan:
+- Tabel ini dipakai untuk throttling login, register, reset password, admin action, dan endpoint sensitif lain.
+
+3.7. Tabel `SecurityQuestion`
+Primary key:
+- `id` UUID
+
+Foreign key:
+- `userId` -> `User.id` ON DELETE CASCADE
+
+Unique constraint:
+- `(userId, question)` UNIQUE
+
+Relasi:
+- many SecurityQuestion -> 1 User
+
+Catatan:
+- Jawaban disimpan sebagai hash bcrypt, yang merupakan keputusan baik.
+- Sistem mengharapkan 5 pertanyaan per user, tetapi database belum punya constraint eksplisit yang memaksa tepat 5.
+
+3.8. Tabel `AdminBackupSetting`
+Primary key:
+- `id` UUID
+
+Foreign key:
+- `adminId` -> `User.id` ON DELETE CASCADE
+
+Unique constraint:
+- `adminId` UNIQUE
+
+Relasi:
+- 1 AdminBackupSetting -> 1 User
+
+Catatan:
+- Secara desain, tabel ini ditujukan untuk admin, tetapi database tidak memaksa bahwa `adminId` harus milik user dengan role ADMIN. Pembatasan ini masih di level aplikasi.
+
+4. PETA RELASI SEDERHANA
+User
+|- Loan
+|  |- Payment
+|- AuditLog
+|- SecurityQuestion
+|- AdminBackupSetting
+
+Comment berdiri sendiri.
+RateLimitEntry berdiri sendiri.
+
+5. KONFIGURASI ON DELETE DAN DAMPAKNYA
+Yang menggunakan `ON DELETE CASCADE`:
+- User -> Loan
+- Loan -> Payment
+- User -> AuditLog
+- User -> SecurityQuestion
+- User -> AdminBackupSetting
+
+Implikasi:
+- Menghapus user akan menghapus seluruh pinjaman, pembayaran, log audit, pertanyaan keamanan, dan setting backup terkait.
+- Secara teknis ini konsisten, tetapi dari sudut audit/compliance, menghapus AuditLog saat user dihapus bisa menjadi kelemahan serius karena jejak audit ikut hilang.
+
+Temuan penting:
+- Untuk sistem keuangan atau semi-finansial, audit log sebaiknya tidak mudah hilang karena delete user. Biasanya log bersifat immutable atau minimal dipertahankan dengan `SET NULL` / soft delete actor reference.
+
+6. UNIQUE, INDEX, DAN KINERJA
+Constraint unik yang terlihat:
+- `User.email`
+- `AdminBackupSetting.adminId`
+- `RateLimitEntry.key`
+- `SecurityQuestion(userId, question)`
+
+Index eksplisit yang terlihat:
+- Praktis sangat minim.
+
+Risiko performa:
+- Banyak query memakai filter pada kolom berikut, tetapi tidak tampak index eksplisit di schema:
+  - `Loan.userId`
+  - `Payment.loanId`
+  - `AuditLog.auditorId`
+  - `SecurityQuestion.userId`
+  - `AdminBackupSetting.adminId` memang unik, jadi otomatis terindeks
+  - `User.role`
+  - `User.status`
+  - `Loan.status`
+  - `Payment.status`
+  - `AuditLog.createdAt`
+
+Catatan teknis penting:
+- Foreign key di PostgreSQL tidak otomatis memberi index pada kolom anak.
+- Karena banyak endpoint membaca data berdasarkan FK dan status, sebaiknya tambahkan index eksplisit.
+
+Rekomendasi index prioritas:
+- `Loan(userId, status, createdAt)`
+- `Payment(loanId, status, paidAt)`
+- `AuditLog(auditorId, createdAt)`
+- `SecurityQuestion(userId)`
+- `User(role, status, createdAt)`
+- `Loan(status, createdAt)`
+- `Payment(status, paidAt)`
+
+7. LOGIKA BISNIS DATABASE YANG TERLIHAT DI APLIKASI
+
+7.1. Registrasi user
+Di `app/api/auth/register/route.ts`:
+- User baru selalu dibuat dengan role `USER`
+- Password di-hash bcrypt
+- Jika pertanyaan keamanan dikirim lengkap 5 item, maka dibuat `SecurityQuestion`
+
+Kekuatan:
+- Role default aman.
+- Password tidak pernah disimpan plaintext.
+
+Kelemahan:
+- Pembuatan `User` dan `SecurityQuestion` tidak dibungkus transaction. Jika create user sukses tetapi create security questions gagal, data bisa setengah jadi.
+
+7.2. Login
+Di `app/api/auth/login/route.ts`:
+- Validasi origin
+- Wajib captcha
+- Rate limit by IP dan by account+IP
+- Password diverifikasi dengan bcrypt
+- Status BLOCKED/SUSPENDED dicek
+- Token JWT berisi `userId`, `email`, `role`, `sessionVersion`
+
+Kekuatan:
+- Ada anti-bruteforce berlapis.
+- Ada captcha.
+- Ada `sessionVersion` untuk invalidasi sesi.
+
+7.3. Loan apply
+Di `app/api/loan/apply/route.ts`:
+- Hanya role USER yang boleh mengajukan pinjaman
+- Limit pinjaman dihitung dinamis berdasarkan histori pembayaran
+- User `loanLimit` di-update ke DB
+- Dicek outstanding principal dan kondisi pembayaran pinjaman aktif
+
+Kekuatan:
+- Ada business guard cukup jelas.
+- Logika limit tidak hanya statis.
+
+Kelemahan:
+- Banyak perhitungan finansial dan status dilakukan di aplikasi, bukan constraint/derived structure di database.
+- Potensi race condition jika dua request pengajuan pinjaman datang hampir bersamaan.
+
+7.4. Approval/rejection payment
+Di `app/api/admin/payments/[id]/route.ts`:
+- Hanya admin boleh update status payment
+- Hanya payment PENDING yang bisa diproses
+- Jika payment dinyatakan PAID, sistem menghitung ulang total paid dan jika lunas maka loan diubah ke PAID
+
+Kelemahan:
+- Update payment dan update loan tidak dibungkus transaction atomik.
+- Ada potensi inkonsistensi jika request berhenti di tengah.
+
+7.5. Risk analysis
+Di `lib/risk-analysis.ts` dan `app/api/admin/users/route.ts`:
+- Risk level user dihitung dari histori loan
+- Endpoint admin sekaligus meng-update risk level ke tabel user bila berbeda
+
+Catatan:
+- Ini membuat endpoint baca (`GET /api/admin/users`) punya side effect write ke database. Secara desain ini kurang ideal.
+
+8. MODEL USER, ROLE, STATUS, DAN PEMBATASAN
+
+8.1. Role
+Role yang ada:
+- USER: peminjam biasa
+- ADMIN: pengelola data dan keputusan operasional
+- AUDITOR: akses baca, monitoring, dan audit
+
+8.2. Status akun
+Status:
+- ACTIVE: boleh beroperasi
+- SUSPENDED: dibatasi
+- BLOCKED: diblokir penuh
+
+Implementasi:
+- `requireAuth()` mengecek status setelah user tervalidasi.
+- `requireAdmin()` dan `requireAuditor()` mewarisi pengecekan ini.
+
+Efek praktis:
+- User yang suspended/blocked tidak bisa memakai endpoint yang melalui `requireAuth`.
+- Login juga menolak akun suspended/blocked.
+
+8.3. Pembatasan bisnis tambahan untuk USER
+- Tidak semua role bisa ajukan pinjaman; hanya USER.
+- USER punya `loanLimit`.
+- Pengajuan pinjaman baru dibatasi oleh outstanding principal dan histori pembayaran.
+
+8.4. Pembatasan untuk ADMIN
+Admin bisa:
+- Lihat semua user
+- Ubah status/risk user
+- Hapus user
+- Kelola admin lain
+- Kelola auditor
+- Konfirmasi pembayaran
+- Kelola backup database
+- Reset password akun lain
+
+8.5. Pembatasan untuk AUDITOR
+Auditor bisa:
+- Melihat user, loan, payment, comment, audit log, statistik
+- Generate audit report
+- Tidak boleh mutate data operasional utama
+
+Secara konsep ini sudah cocok dengan RBAC sederhana 3 peran.
+
+9. RBAC YANG DIPAKAI
+
+9.1. Enforcement layer
+RBAC diterapkan terutama di layer aplikasi, bukan di layer database.
+Komponen utama:
+- `proxy.ts` membatasi akses page/path berdasarkan role dari JWT
+- `lib/auth.ts` menyediakan `requireAuth`, `requireAdmin`, `requireAuditor`
+- Route handler masing-masing memanggil helper ini
+
+9.2. Bentuk RBAC
+Ini adalah RBAC berbasis peran statis, bukan permission matrix granular.
+
+Contoh:
+- `requireAdmin()` hanya menerima role ADMIN
+- `requireAuditor()` hanya menerima role AUDITOR
+- USER hanya punya akses ke endpoint berbasis dirinya sendiri
+
+9.3. Kekuatan RBAC saat ini
+- Cukup jelas dan mudah dipahami
+- Tidak rumit
+- Konsisten dipakai di banyak endpoint admin/auditor
+
+9.4. Kelemahan RBAC saat ini
+- Tidak ada permission granularity, misalnya:
+  - admin keuangan vs admin user-management
+  - auditor report-only vs auditor full-read
+- Enforcement sepenuhnya di application layer; database tidak punya RLS
+- Jika ada route baru yang lupa memanggil `requireAdmin`/`requireAuditor`, ia berisiko terbuka
+
+10. KEAMANAN DATABASE DAN DATA
+
+10.1. Kekuatan keamanan yang sudah ada
+- Password user di-hash dengan bcrypt
+- Jawaban pertanyaan keamanan di-hash dengan bcrypt
+- JWT memakai secret
+- Session invalidation memakai `sessionVersion`
+- Cookie sesi `httpOnly`, `sameSite=lax`, `secure` di production
+- CSRF token untuk mutasi sensitif
+- Validasi origin
+- Rate limiting persisten di DB
+- Validasi password memakai local rules + HIBP breach check
+- Banyak route sensitif admin memakai CSRF + rate limit + auth
+
+10.2. Kelemahan keamanan yang masih terlihat
+
+A. Backup database menyertakan data sensitif mentah
+Endpoint backup menyalin tabel user, password hash, security question hash, audit log, dan rate limit entries ke file JSON.
+Risiko:
+- Backup file adalah aset sangat sensitif.
+- Jika folder target lemah atau terbaca pihak lain, dampaknya besar.
+
+B. Audit log terhubung ke FK cascade
+Jika user dihapus, audit log miliknya ikut hilang.
+Risiko:
+- Kehilangan bukti audit.
+
+C. Belum ada database-level guard untuk peran admin pada `AdminBackupSetting`
+Secara logika hanya admin yang boleh punya setting backup, tetapi DB tidak memaksa itu.
+
+D. Tidak ada soft delete
+Delete user/admin/auditor bersifat hard delete.
+Risiko:
+- Data historis hilang permanen.
+- Bisa mengganggu pelacakan audit dan pelaporan.
+
+E. Beberapa operasi multi-step belum transactional
+Contoh:
+- register user + create security questions
+- confirm payment + mark loan PAID
+- beberapa alur update/delete kompleks
+
+Risiko:
+- Partial write / data inconsistency.
+
+F. Constraint bisnis penting masih hanya di aplikasi
+Tidak ada database-level check untuk:
+- amount > 0
+- interest dalam range valid
+- duration positif
+- intervalDays harus 1/3/7
+- total pembayaran tidak melebihi debt
+
+G. Potensi oversharing data dalam backup dan beberapa query
+Beberapa proses internal membaca full user row termasuk password hash jika memakai `getUserWithPasswordFromRequest`.
+Ini tidak langsung bocor ke client, tetapi permukaan sensitif tetap ada.
+
+H. Kolom `AuditLog.auditorId` secara semantik salah nama
+Ini bukan bug keamanan langsung, tapi berpotensi menimbulkan miskomunikasi desain dan salah asumsi operasional.
+
+10.3. Tingkat kekuatan keamanan secara umum
+Penilaian praktis:
+- Untuk proyek aplikasi kampus/internal/demo yang cukup serius: cukup baik.
+- Untuk aplikasi produksi finansial sungguhan: masih menengah, belum kuat.
+
+Skor kualitatif:
+- Kekuatan autentikasi: menengah ke atas
+- Kekuatan otorisasi: menengah
+- Kekuatan integritas data: menengah
+- Kekuatan audit/compliance: menengah ke bawah
+- Kesiapan production finansial: menengah ke bawah
+
+11. TEMUAN RISIKO DATA DAN INTEGRITAS
+
+11.1. GET endpoint yang menulis
+`GET /api/admin/users` melakukan risk recalculation dan update DB.
+Masalah:
+- GET seharusnya idempotent dan idealnya tanpa side effect write.
+
+11.2. Hapus user manual + cascade campuran
+Di `app/api/admin/users/[id]/route.ts`, delete dilakukan manual untuk payments, loans, audit logs, lalu user dihapus.
+Masalah:
+- Sebagian sebenarnya sudah bisa dicascade.
+- Strategi campuran mempersulit reasoning dan maintenance.
+
+11.3. Perhitungan finansial berbasis agregasi aplikasi
+Sisa hutang dan status lunas dihitung dari query + loop aplikasi.
+Masalah:
+- Sulit dijaga konsisten jika volume bertambah atau jika ada race condition.
+
+11.4. Rate limit tergantung DB
+Jika tabel rate limit atau koneksi DB bermasalah, throttling bisa nonaktif sementara.
+Masalah:
+- Keamanan ikut tergantung kesehatan DB.
+
+12. HAL-HAL PENTING YANG PERLU DIBAHAS DAN DIPERHATIKAN
+
+12.1. Apakah sistem ini butuh hard delete atau soft delete?
+Untuk sistem finansial, soft delete biasanya lebih aman.
+Minimal:
+- Tambahkan `deletedAt`
+- Jangan hapus audit trail
+
+12.2. Apakah audit log harus immutable?
+Sebaiknya ya.
+Pertimbangkan:
+- audit log tidak ikut cascade delete
+- append-only
+- actor snapshot (email/role saat kejadian) disimpan juga
+
+12.3. Apakah perlu RLS atau database role separation?
+Jika targetnya benar-benar production dan multi-tenant/lebih kompleks, ya.
+Saat ini semua enforcement ada di application layer.
+
+12.4. Apakah backup JSON aman?
+Perlu perhatian besar:
+- file backup harus dienkripsi
+- lokasi folder harus dibatasi
+- sebaiknya whitelist base directory
+- sebaiknya tidak membiarkan path arbitrer penuh dari input user
+
+12.5. Apakah perlu migrasi dari business rules aplikasi ke constraint database?
+Ya, untuk beberapa rule utama:
+- numeric checks
+- interval checks
+- not null yang lebih ketat
+- mungkin unique/business key tambahan
+
+12.6. Apakah butuh transaksi database?
+Ya, untuk operasi berikut:
+- registrasi user + security questions
+- update payment + update loan status
+- delete user beserta semua dependent cleanup
+- reset password sensitif bila nanti bertambah efek samping lain
+
+12.7. Apakah butuh index tambahan?
+Ya, ini prioritas tinggi jika data mulai bertambah.
+
+13. REKOMENDASI PRIORITAS
+
+Prioritas 1 - sangat penting
+- Ubah backup agar hanya menulis ke base directory yang diizinkan, bukan path arbitrer bebas.
+- Lindungi backup dengan enkripsi atau minimal permission filesystem yang ketat.
+- Hentikan cascade delete untuk `AuditLog`, atau pindah ke model audit yang immutable.
+- Tambahkan transaction untuk register, payment confirmation, dan delete flows yang kompleks.
+
+Prioritas 2 - penting
+- Tambahkan index pada FK dan kolom filter utama.
+- Tambahkan database check constraints untuk numeric field dan intervalDays.
+- Ubah `GET /api/admin/users` agar tidak menulis ke DB.
+- Rename `AuditLog.auditorId` menjadi `actorId` pada refactor berikutnya.
+
+Prioritas 3 - peningkatan arsitektur
+- Pertimbangkan soft delete untuk `User`.
+- Pertimbangkan permission model yang lebih granular jika admin/auditor mulai bertambah.
+- Pertimbangkan materialized/stat summary approach untuk laporan keuangan bila dataset membesar.
+
+14. KESIMPULAN
+Struktur database project ini cukup rapi untuk aplikasi dengan kompleksitas kecil sampai menengah. PK/FK dan relasi dasarnya jelas, enum dipakai dengan baik, dan kontrol akses role di layer aplikasi relatif konsisten. Sistem keamanan dasarnya juga sudah lebih baik daripada CRUD sederhana biasa karena ada bcrypt, captcha, CSRF, rate limiting, session versioning, dan password policy.
+
+Namun, dari sudut pandang database engineering dan security untuk sistem yang menyentuh domain keuangan, masih ada beberapa gap penting:
+- audit trail masih rapuh karena cascade delete
+- business constraints masih terlalu banyak bergantung pada aplikasi
+- indexing belum matang
+- beberapa operasi belum atomic
+- backup database masih sangat sensitif dan perlu pengamanan tambahan
+
+Secara ringkas:
+- Desain fungsional: baik
+- Desain relasi dasar: baik
+- RBAC aplikasi: cukup baik
+- Integritas data: sedang
+- Audit/compliance: perlu diperkuat
+- Hardening produksi: masih perlu pekerjaan lanjutan
+
+15. PEMETAAN SOAL PENGUJIAN POSTGRESQL DAN STATUS IMPLEMENTASI
+
+Bagian ini menjawab daftar soal pengujian PostgreSQL yang dikonversi dari MySQL, sekaligus menjelaskan apa yang sudah diterapkan di project agar pengecekan itu dapat dijalankan.
+
+15.1. Artefak baru yang ditambahkan ke project
+- `prisma/postgres-security-checks.sql`
+  Berisi query PostgreSQL untuk audit role anonim, superuser, hash password, foreign key, unique email, backup table, SSL, logging, archive, dan index.
+- `prisma/postgres-security-checks.ps1`
+  Berisi pemeriksaan host-level berbasis PowerShell untuk port 5432, file backup, scheduled task, dan ketersediaan `pg_dump` / `pg_restore`.
+- `prisma/postgres-hardening.ts`
+  Berisi hardening constraint PostgreSQL yang diterapkan langsung ke database.
+- `package.json`
+  Ditambahkan script `db:harden`.
+
+15.2. Poin soal 1: cek user anonim
+Soal:
+- Pastikan tidak ada user anonim.
+
+Status project:
+- Ini adalah pengecekan level server PostgreSQL, bukan level schema aplikasi.
+- Project sekarang sudah memiliki query audit untuk mengecek role kosong atau role `anonymous`.
+
+Perintah yang disediakan:
+- Lihat `prisma/postgres-security-checks.sql`
+
+Catatan:
+- Project aplikasi tidak membuat role database anonim.
+- Hasil final bergantung pada server PostgreSQL yang dipakai saat runtime.
+
+15.3. Poin soal 2: cek user dengan ALL PRIVILEGES
+Soal:
+- Pastikan user aplikasi bukan superuser.
+
+Status project:
+- Ini juga pemeriksaan level server PostgreSQL.
+- Project sekarang sudah memiliki query audit untuk memeriksa `usesuper` pada `pg_user`.
+
+Perintah yang disediakan:
+- Lihat `prisma/postgres-security-checks.sql`
+
+Catatan:
+- Repo ini tidak mengelola provisioning role PostgreSQL secara langsung.
+- Jadi yang diterapkan adalah kemampuan audit/query, bukan pembuatan role server.
+
+15.4. Poin soal 3: cek password harus dalam bentuk hash
+Soal:
+- Pastikan password tidak plain text.
+
+Status sebelum perubahan:
+- Sudah benar di level aplikasi: password user di-hash bcrypt saat register, reset password, dan create admin/auditor.
+
+Penerapan tambahan yang sekarang dilakukan:
+- Ditambahkan hardening constraint PostgreSQL:
+  - `user_password_bcrypt_chk` pada tabel `User`
+  - `security_questions_answer_bcrypt_chk` pada tabel `security_questions`
+
+Dampak:
+- Tidak hanya aplikasi yang meng-hash password, database sekarang juga menolak nilai password/jawaban keamanan yang tidak mengikuti pola bcrypt.
+
+15.5. Poin soal 4: cek foreign key pada tabel pinjaman
+Soal:
+- Pastikan tabel pinjaman punya foreign key.
+
+Adaptasi project:
+- Nama tabel di project adalah `Loan`, bukan `pinjaman`.
+
+Status project:
+- Sudah ada FK:
+  - `Loan.userId -> User.id`
+  - `Payment.loanId -> Loan.id`
+- Audit query untuk foreign key juga sudah ditambahkan ke file SQL.
+
+15.6. Poin soal 5: cek constraint UNIQUE pada kolom email
+Soal:
+- Tabel user harus memiliki `email VARCHAR(100) UNIQUE`.
+
+Status sebelum perubahan:
+- `User.email` sudah `UNIQUE`, tetapi belum dibatasi panjang `VARCHAR(100)` secara eksplisit di schema Prisma.
+
+Penerapan tambahan yang sekarang dilakukan:
+- `User.email` diubah menjadi `@db.VarChar(100)` dan tetap `@unique`.
+- `Comment.email` juga dibatasi menjadi `VARCHAR(100)` agar konsisten.
+
+Kesimpulan:
+- Poin ini sekarang sudah terjawab secara eksplisit baik di schema maupun di query audit.
+
+15.7. Poin soal 6: cek backup dan restore
+Soal:
+- Pastikan ada mekanisme backup dan restore.
+
+Status project:
+- Sudah diterapkan fitur:
+  - backup manual
+  - backup otomatis
+  - restore database
+- Semua tersedia dari admin dashboard.
+
+Lokasi implementasi:
+- UI: `app/admin/backup/page.tsx`
+- API: `app/api/admin/database-backup/route.ts`
+- Helper: `lib/database-backup.ts`
+- Scheduler otomatis: `lib/automatic-backup.ts`
+- Setting backup: tabel `AdminBackupSetting`
+
+Audit tambahan:
+- `prisma/postgres-security-checks.sql` mengecek keberadaan tabel `admin_backup_settings`.
+- `prisma/postgres-security-checks.ps1` membantu mengecek file backup di level host.
+
+15.8. Poin soal 7: cek port PostgreSQL yang terbuka
+Soal:
+- Pastikan port PostgreSQL dapat dicek.
+
+Status project:
+- Ini adalah pemeriksaan level host/server.
+- Sudah ditambahkan file PowerShell untuk mengecek listener `5432`.
+- Query SQL juga disediakan untuk `SHOW port;` dan `SHOW listen_addresses;`.
+
+15.9. Poin soal 8: cek data sensitif terenkripsi / hashed
+Soal:
+- Password dan token tidak boleh tersimpan plain text.
+
+Status project:
+- Password user di-hash bcrypt.
+- Jawaban pertanyaan keamanan di-hash bcrypt.
+- Token sesi utama tidak disimpan di tabel database, tetapi dikirim sebagai JWT via cookie `httpOnly`.
+
+Penerapan tambahan yang sekarang dilakukan:
+- Constraint regex bcrypt di level PostgreSQL untuk password dan jawaban keamanan.
+- Query audit SQL untuk menghitung row yang tidak sesuai pola hash.
+
+Catatan:
+- Enkripsi transport SSL tetap bergantung pada konfigurasi server PostgreSQL.
+- Project sekarang menyediakan query inspeksi `SHOW ssl;`.
+
+15.10. Poin soal 9: cek general log / query log
+Soal:
+- Pastikan konfigurasi logging PostgreSQL dapat diperiksa.
+
+Status project:
+- Ini adalah pemeriksaan level server PostgreSQL.
+- Query inspeksi sudah ditambahkan untuk:
+  - `SHOW logging_collector;`
+  - `SHOW log_statement;`
+  - `SHOW log_min_duration_statement;`
+  - `SHOW archive_mode;`
+  - `SHOW archive_command;`
+
+Catatan:
+- Repo ini tidak memaksa konfigurasi logging server karena hal tersebut biasanya berada di `postgresql.conf`, container runtime, atau managed database settings.
+
+16. HARDENING TAMBAHAN YANG SUDAH DITERAPKAN AGAR SOAL BISA DIJAWAB LEBIH KUAT
+
+16.1. Penambahan index
+Sekarang schema sudah ditambah index yang relevan:
+- `User(role, status, createdAt)`
+- `Loan(userId, status, createdAt)`
+- `Loan(status, createdAt)`
+- `Payment(loanId, status, paidAt)`
+- `Payment(status, paidAt)`
+- `AuditLog(auditorId, createdAt)`
+- `SecurityQuestion(userId)`
+
+Tujuan:
+- Memperkuat performa query yang juga sering dipakai saat audit, monitoring, dan operasi admin.
+
+16.2. Penambahan constraint PostgreSQL
+Constraint yang kini diterapkan via `npm run db:harden`:
+- `user_password_bcrypt_chk`
+- `security_questions_answer_bcrypt_chk`
+- `admin_backup_settings_interval_days_chk`
+
+Tujuan:
+- Menjawab soal hash password dengan enforcement nyata di database.
+- Menjawab soal validitas konfigurasi backup interval dengan constraint database.
+
+16.3. Penyesuaian tipe kolom email
+Kolom email kini mengikuti kebutuhan soal dengan lebih dekat:
+- `User.email` menjadi `VARCHAR(100) UNIQUE`
+- `Comment.email` menjadi `VARCHAR(100)`
+
+17. HAL YANG MASIH BERSIFAT INSPEKSI, BUKAN DIKUNCI OLEH REPO
+
+Walau project sudah ditambah query/skrip untuk mengerjakan soal, beberapa poin tetap bergantung pada server PostgreSQL atau OS host:
+- role anonim database
+- siapa yang superuser
+- SSL aktif atau tidak
+- archive_mode dan archive_command
+- logging_collector dan log_statement
+- port/listen address aktual
+- scheduled task / cron backup
+- enkripsi disk / storage at rest
+
+Artinya:
+- Repo ini sekarang sudah bisa mengaudit dan membuktikan kondisi itu.
+- Tetapi kondisi finalnya tetap ditentukan oleh environment deployment, bukan source code aplikasi semata.
+
+18. CARA MENJALANKAN PENGUJIAN TAMBAHAN
+
+Untuk hardening constraint database:
+- `npm run db:harden`
+
+Untuk menjalankan query audit PostgreSQL:
+- `psql "$DATABASE_URL" -f prisma/postgres-security-checks.sql`
+
+Untuk pemeriksaan host-level di Windows PowerShell:
+- `powershell -ExecutionPolicy Bypass -File prisma/postgres-security-checks.ps1`
+
+19. KESIMPULAN UNTUK DAFTAR SOAL
+
+Setelah perubahan ini:
+- Poin FK, UNIQUE email, password hash, backup, restore, dan audit query sudah ter-cover secara nyata di project.
+- Poin pemeriksaan konfigurasi server PostgreSQL seperti SSL, log, archive, port, dan role server sudah difasilitasi dengan query/skrip audit.
+- Beberapa poin yang sebelumnya hanya benar di level aplikasi sekarang juga diperkuat di level database, terutama untuk hash password dan validitas interval backup.

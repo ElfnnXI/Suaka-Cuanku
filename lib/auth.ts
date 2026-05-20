@@ -86,9 +86,8 @@ export async function getUserFromRequest(request: NextRequest) {
       role: true,
       status: true,
       sessionVersion: true,
-      mfaTotpEnabled: true,
-      mfaEnrolledAt: true,
       createdAt: true,
+      _count: { select: { securityQuestions: true } },
     },
   });
 
@@ -96,7 +95,8 @@ export async function getUserFromRequest(request: NextRequest) {
     return null;
   }
 
-  return user;
+  const { _count, ...safeUser } = user;
+  return { ...safeUser, hasSecurityQuestions: _count.securityQuestions === 5 };
 }
 
 export async function getUserWithPasswordFromRequest(request: NextRequest) {

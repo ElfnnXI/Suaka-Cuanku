@@ -32,10 +32,6 @@ export async function clearApplicationData(prisma: PrismaClient) {
     paymentsCount,
     loansCount,
     auditLogsCount,
-    authChallengesCount,
-    backupCodesCount,
-    passwordResetChallengesCount,
-    sensitiveActionChallengesCount,
     usersCount,
   ] = await prisma.$transaction([
     prisma.rateLimitEntry.deleteMany(),
@@ -43,10 +39,6 @@ export async function clearApplicationData(prisma: PrismaClient) {
     prisma.payment.deleteMany(),
     prisma.loan.deleteMany(),
     prisma.auditLog.deleteMany(),
-    prisma.authChallenge.deleteMany(),
-    prisma.userBackupCode.deleteMany(),
-    prisma.passwordResetChallenge.deleteMany(),
-    prisma.sensitiveActionChallenge.deleteMany(),
     prisma.user.deleteMany(),
   ]);
 
@@ -56,10 +48,6 @@ export async function clearApplicationData(prisma: PrismaClient) {
     payments: paymentsCount.count,
     loans: loansCount.count,
     auditLogs: auditLogsCount.count,
-    authChallenges: authChallengesCount.count,
-    backupCodes: backupCodesCount.count,
-    passwordResetChallenges: passwordResetChallengesCount.count,
-    sensitiveActionChallenges: sensitiveActionChallengesCount.count,
     users: usersCount.count,
   };
 }
@@ -79,9 +67,6 @@ export async function seedAdminAccount(prisma: PrismaClient) {
       riskReason: null,
       loanLimit: 30000000,
       sessionVersion: 0,
-      mfaTotpEnabled: false,
-      mfaTotpSecret: null,
-      mfaEnrolledAt: null,
     },
     create: {
       name: config.name,

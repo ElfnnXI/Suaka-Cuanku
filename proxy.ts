@@ -65,7 +65,7 @@ async function verifyJwt(token: string): Promise<JwtPayload | null> {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const publicPagePaths = ['/', '/login', '/register', '/mfa', '/forgot-password'];
+  const publicPagePaths = ['/', '/login', '/register', '/forgot-password'];
 
   if (publicPagePaths.includes(pathname)) {
     return NextResponse.next();

@@ -107,14 +107,14 @@ export default function AdminLoansPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'Poppins, sans-serif' }}>
               Kelola Pinjaman
             </h1>
-            <p className="text-gray-600">Review dan kelola semua pinjaman</p>
+            <p className="text-gray-400">Review dan kelola semua pinjaman</p>
           </div>
           <button
             onClick={fetchLoans}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 glossy-card rounded-xl hover:bg-white/10 transition-colors text-white"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Refresh</span>
@@ -122,15 +122,15 @@ export default function AdminLoansPage() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex gap-2 bg-white p-2 rounded-xl border border-gray-100 w-fit">
+        <div className="flex gap-2 glossy-card p-2 rounded-xl w-fit">
           {['all', 'PENDING', 'APPROVED', 'REJECTED', 'PAID'].map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 filter === status
-                  ? 'bg-primary text-white'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  ? 'bg-cyan-500 text-white shadow-md'
+                  : 'text-gray-300 hover:bg-white/10'
               }`}
             >
               {status === 'all' ? 'Semua' : status}
@@ -144,28 +144,28 @@ export default function AdminLoansPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           </div>
         ) : filteredLoans.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
-            <DollarSign className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">Tidak Ada Pinjaman</h3>
-            <p className="text-gray-600">Tidak ada pinjaman dengan filter yang dipilih.</p>
+          <div className="glossy-card rounded-2xl p-12 text-center">
+            <DollarSign className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">Tidak Ada Pinjaman</h3>
+            <p className="text-gray-400">Tidak ada pinjaman dengan filter yang dipilih.</p>
           </div>
         ) : (
           <div className="space-y-4">
             {filteredLoans.map((loan) => (
               <div
                 key={loan.id}
-                className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
+                className="glossy-card rounded-2xl p-6"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-bold text-gray-900">
+                      <h3 className="text-xl font-bold text-white">
                         Rp {loan.amount.toLocaleString('id-ID')}
                       </h3>
                       {getStatusBadge(loan.status)}
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                    <div className="grid grid-cols-2 gap-4 text-sm text-gray-400">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
                         <span>{new Date(loan.createdAt).toLocaleDateString('id-ID', { 
@@ -182,8 +182,8 @@ export default function AdminLoansPage() {
                     </div>
 
                     {loan.user && (
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        <div className="text-sm text-gray-600">
+                      <div className="mt-3 pt-3 border-t border-white/10">
+                        <div className="text-sm text-gray-400">
                           <span className="font-medium">Pemohon:</span> {loan.user.name} ({loan.user.email})
                         </div>
                       </div>
@@ -193,7 +193,7 @@ export default function AdminLoansPage() {
 
                 {/* Action Buttons for Pending Loans */}
                 {loan.status === 'PENDING' && (
-                  <div className="flex gap-3 pt-4 border-t border-gray-100">
+                  <div className="flex gap-3 pt-4 border-t border-white/10">
                     <Button
                       onClick={() => handleStatusUpdate(loan.id, 'APPROVED')}
                       disabled={processingId === loan.id}

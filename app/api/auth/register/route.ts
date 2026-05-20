@@ -10,12 +10,15 @@ import {
   withPrivateCache,
 } from '@/lib/security';
 import { validatePasswordSecurity } from '@/lib/password-security';
-import { attachPendingMfa, beginMfaChallenge } from '@/lib/mfa';
+import { generateToken } from '@/lib/auth';
+import { applyCsrfCookie, clearAuthCookies, createCsrfToken, getSessionCookieOptions } from '@/lib/security';
+import { securityQuestionsSchema, hashAnswer } from '@/lib/security-questions';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password wajib diisi'),
+  securityQuestions: securityQuestionsSchema.optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, email, password } = registerSchema.parse(body);
+    const { name, email, password, securityQuestions } = registerSchema.parse(body);
     const passwordValidation = await validatePasswordSecurity(password);
 
     if (!passwordValidation.valid) {
@@ -74,17 +77,38 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const mfaChallenge = await beginMfaChallenge(user.id);
+    const token = await generateToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionVersion: user.sessionVersion,
+    });
+
     const response = NextResponse.json({
       message: 'User registered successfully',
-      requiresMfa: true,
-      mfa: {
-        setupRequired: mfaChallenge.setupRequired,
-        totpEnrolled: !mfaChallenge.setupRequired,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
     });
-    attachPendingMfa(response, mfaChallenge.challenge.id);
-    await logSecurityEvent(user.id, 'REGISTER_SUCCESS', `User ${user.email} berhasil registrasi dan menunggu MFA awal`, undefined, ipAddress, request.headers.get('user-agent') || undefined);
+
+    if (securityQuestions && securityQuestions.length === 5) {
+      const hashedItems = await Promise.all(
+        securityQuestions.map(async (item) => ({
+          userId: user.id,
+          question: item.question,
+          answer: await hashAnswer(item.answer),
+        }))
+      );
+      await prisma.securityQuestion.createMany({ data: hashedItems });
+    }
+
+    clearAuthCookies(response);
+    response.cookies.set('token', token, getSessionCookieOptions());
+    applyCsrfCookie(response, createCsrfToken());
+    await logSecurityEvent(user.id, 'REGISTER_SUCCESS', `User ${user.email} berhasil registrasi`, undefined, ipAddress, request.headers.get('user-agent') || undefined);
 
     return withPrivateCache(response);
   } catch (error) {

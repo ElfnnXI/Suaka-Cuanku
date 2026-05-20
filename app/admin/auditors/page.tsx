@@ -31,7 +31,6 @@ export default function AdminAuditorsPage() {
   const [selectedAuditorForReset, setSelectedAuditorForReset] = useState<any>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
   const [resetProcessing, setResetProcessing] = useState(false);
   const [createPasswordFeedback, setCreatePasswordFeedback] = useState('');
   const [createPasswordValid, setCreatePasswordValid] = useState(false);
@@ -205,7 +204,6 @@ export default function AdminAuditorsPage() {
     setSelectedAuditorForReset(auditor);
     setNewPassword('');
     setConfirmPassword('');
-    setTotpCode('');
     setShowResetPasswordModal(true);
   };
 
@@ -233,7 +231,6 @@ export default function AdminAuditorsPage() {
         body: JSON.stringify({
           userId: selectedAuditorForReset.id,
           newPassword: newPassword,
-          totpCode,
         }),
       });
 
@@ -252,17 +249,6 @@ export default function AdminAuditorsPage() {
     } finally {
       setResetProcessing(false);
     }
-  };
-
-  const startResetPasswordMfa = async () => {
-    const res = await apiFetch('/api/auth/mfa/sensitive-action/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'ADMIN_RESET_PASSWORD' }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Gagal mengirim OTP MFA');
-    alert(data.message || 'Verifikasi authenticator siap digunakan');
   };
 
   const getStatusBadge = (status: string) => {
@@ -510,18 +496,7 @@ export default function AdminAuditorsPage() {
                 <div className="text-white font-medium">{selectedAuditorForReset.name} ({selectedAuditorForReset.email})</div>
               </div>
 
-              <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-xl text-sm">
-                Reset password auditor wajib step-up MFA admin. Siapkan verifikasi lalu isi kode authenticator Anda.
-              </div>
-
               <div className="space-y-4 mb-4">
-                <button
-                  type="button"
-                  onClick={startResetPasswordMfa}
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-cyan-300 hover:bg-white/10 transition"
-                >
-                  Siapkan Verifikasi MFA
-                </button>
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Password Baru</label>
                   <input
@@ -539,16 +514,6 @@ export default function AdminAuditorsPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Ulangi password baru"
-                    className="w-full px-4 py-3 rounded-xl focus:outline-none focus:border-cyan-500 transition bg-white/5 border border-white/10 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Kode Authenticator</label>
-                  <input
-                    type="text"
-                    value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value)}
-                    placeholder="Masukkan kode authenticator"
                     className="w-full px-4 py-3 rounded-xl focus:outline-none focus:border-cyan-500 transition bg-white/5 border border-white/10 text-white"
                   />
                 </div>

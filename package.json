@@ -7,13 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "security:test": "node tests/security-regression.test.mjs",
     "db:seed": "tsx prisma/seed.ts",
     "db:clear": "tsx prisma/clear.ts",
     "db:reset": "tsx prisma/reset.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:harden": "tsx prisma/postgres-hardening.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

@@ -14,10 +14,6 @@ async function main() {
   console.log(`Deleted ${cleared.payments} payments`);
   console.log(`Deleted ${cleared.loans} loans`);
   console.log(`Deleted ${cleared.auditLogs} audit logs`);
-  console.log(`Deleted ${cleared.authChallenges} auth challenges`);
-  console.log(`Deleted ${cleared.backupCodes} backup codes`);
-  console.log(`Deleted ${cleared.passwordResetChallenges} password reset challenges`);
-  console.log(`Deleted ${cleared.sensitiveActionChallenges} sensitive action challenges`);
   console.log(`Deleted ${cleared.users} users`);
   console.log('\nAdmin bootstrap created.');
   console.log(`Admin name: ${admin.name}`);

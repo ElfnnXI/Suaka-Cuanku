@@ -17,7 +17,8 @@ import {
   FileText,
   Shield,
   Settings,
-  Activity
+  Activity,
+  Database
 } from 'lucide-react';
 import { apiFetch } from '@/lib/client-api';
 
@@ -110,6 +111,7 @@ export default function DashboardLayout({ children, role = 'USER' }: DashboardLa
     { icon: UserPlus, label: 'Kelola Admin', href: '/admin/admins' },
     { icon: Shield, label: 'Kelola Auditor', href: '/admin/auditors' },
     { icon: MessageSquare, label: 'Komentar', href: '/admin/comments' },
+    { icon: Database, label: 'Backup Database', href: '/admin/backup' },
     { icon: Settings, label: 'Pengaturan Akun', href: '/settings/account' },
     { icon: Activity, label: 'Aktivitas', href: '/admin/activity' },
   ];

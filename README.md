@@ -342,13 +342,7 @@ Bagian ini menggabungkan dan memperbarui isi dokumen keamanan lama berdasarkan k
 - JWT dibuat di `lib/auth.ts`.
 - Cookie sesi utama bernama `token`.
 - Cookie sesi memakai `HttpOnly`, `sameSite: 'lax'`, dan `secure` aktif di production jika `SESSION_COOKIE_SECURE !== 'false'`.
-- Login dan register sekarang memakai alur MFA bertahap:
-  - password diverifikasi lebih dulu
-  - OTP email dikirim ke alamat user
-  - user wajib memasukkan kode dari aplikasi authenticator TOTP
-  - sesi final baru dibuat setelah OTP email dan TOTP sama-sama valid
-- User yang belum pernah setup authenticator akan dipaksa menyelesaikan enrollment TOTP pada login/register pertama sebelum sesi final dibuat.
-- Tersedia backup codes MFA, re-enroll authenticator, dan reset password mandiri berbasis OTP email + authenticator.
+- Login dan register memakai alur sederhana: password diverifikasi, lalu sesi langsung dibuat.
 
 ### 2. Otorisasi dan Role Guard
 
@@ -392,7 +386,7 @@ Bagian ini menggabungkan dan memperbarui isi dokumen keamanan lama berdasarkan k
 - Password policy minimal 10 karakter dengan huruf, angka, dan simbol diterapkan di register, change password, create admin/auditor, dan reset password.
 - Password baru juga diperiksa terhadap denylist password umum/bocor dan verifikasi breach berbasis hash-range sebelum boleh dipakai.
 - Form register dan pembuatan akun baru menahan submit sampai password lolos pemeriksaan keamanan.
-- Fitur `forgot password` tidak lagi bergantung pada admin; reset mandiri sekarang mewajibkan OTP email + kode authenticator sebelum password baru dapat dipasang.
+- Reset password hanya dapat dilakukan oleh admin melalui panel admin.
 
 ### 8. Pembatasan Akses Data
 
@@ -514,8 +508,6 @@ SMTP_USER="smtp-user"
 SMTP_PASS="smtp-password"
 SMTP_FROM_EMAIL="no-reply@example.com"
 SMTP_FROM_NAME="Suaka Cuanku"
-MFA_ENCRYPTION_KEY="base64-atau-hex-32-byte"
-MFA_ISSUER="Suaka Cuanku"
 SEED_ADMIN_EMAIL="admin@example.com"
 SEED_ADMIN_PASSWORD="gunakan-password-bootstrap-yang-kuat"
 ```
@@ -529,9 +521,7 @@ Keterangan:
 - `TRUST_PROXY_HEADERS`: aktifkan hanya bila aplikasi memang berada di belakang reverse proxy tepercaya yang mengisi header IP dengan benar.
 - `PASSWORD_BREACH_CHECK_MODE`: `strict` memblokir pembuatan password bila pengecekan breach gagal; `best-effort` memakai denylist lokal saat layanan breach checker tidak tersedia.
 - `HIBP_RANGE_API_URL`: endpoint hash-range untuk verifikasi password breached tanpa mengirim password mentah.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`: konfigurasi SMTP untuk pengiriman OTP email MFA.
-- `MFA_ENCRYPTION_KEY`: kunci 32 byte untuk mengenkripsi secret authenticator TOTP di database.
-- `MFA_ISSUER`: nama issuer yang tampil di aplikasi authenticator.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`: konfigurasi SMTP.
 - `SEED_ADMIN_EMAIL`: email admin bootstrap saat `npm run db:seed`.
 - `SEED_ADMIN_PASSWORD`: password admin bootstrap saat `npm run db:seed`.
 

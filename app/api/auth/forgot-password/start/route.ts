@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { beginPasswordResetChallenge, attachPendingPasswordReset } from '@/lib/mfa';
+import { prisma } from '@/lib/prisma';
 import { consumeRateLimit, getClientIp, validateOrigin, withPrivateCache } from '@/lib/security';
+import { SECURITY_QUESTIONS } from '@/lib/security-questions';
 
-const forgotPasswordSchema = z.object({
+const forgotPasswordStartSchema = z.object({
   email: z.string().email('Email tidak valid'),
 });
 
@@ -16,8 +17,12 @@ export async function POST(request: NextRequest) {
       ));
     }
 
+    const body = await request.json();
+    const { email } = forgotPasswordStartSchema.parse(body);
+    const normalizedEmail = email.toLowerCase();
+
     const rateLimit = await consumeRateLimit({
-      key: `forgot-password:${getClientIp(request)}`,
+      key: `forgot-password:${normalizedEmail}:${getClientIp(request)}`,
       limit: 5,
       windowMs: 15 * 60 * 1000,
     });
@@ -29,20 +34,32 @@ export async function POST(request: NextRequest) {
       ));
     }
 
-    const body = await request.json();
-    const { email } = forgotPasswordSchema.parse(body);
-    const challenge = await beginPasswordResetChallenge(email.toLowerCase());
-
-    const response = NextResponse.json({
-      message: 'Jika email terdaftar, Anda bisa lanjut ke verifikasi authenticator untuk reset password.',
-      requiresMfa: Boolean(challenge),
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      include: {
+        securityQuestions: {
+          select: { question: true },
+        },
+      },
     });
 
-    if (challenge) {
-      attachPendingPasswordReset(response, challenge.challenge.id);
+    if (user && user.securityQuestions.length === 5) {
+      return withPrivateCache(NextResponse.json({
+        hasQuestions: true,
+        email: normalizedEmail,
+        questions: SECURITY_QUESTIONS.map((q) => ({
+          key: q.key,
+          label: q.label,
+          type: q.type,
+          placeholder: q.placeholder,
+        })),
+      }));
     }
 
-    return withPrivateCache(response);
+    return withPrivateCache(NextResponse.json({
+      hasQuestions: false,
+      message: 'Silakan hubungi admin untuk reset password akun Anda.',
+    }));
   } catch (error) {
     if (error instanceof z.ZodError) {
       return withPrivateCache(NextResponse.json(

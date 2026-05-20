@@ -5,12 +5,9 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { enforceMutationSecurity, enforceRateLimit, getClientIp, withPrivateCache } from '@/lib/security';
 import { validatePasswordSecurity } from '@/lib/password-security';
-import { verifySensitiveActionChallenge } from '@/lib/mfa';
-
 const resetPasswordSchema = z.object({
   userId: z.string().uuid('ID user tidak valid'),
   newPassword: z.string().min(1, 'Password baru wajib diisi'),
-  totpCode: z.string().min(1, 'Kode authenticator wajib diisi'),
 });
 
 export async function POST(request: NextRequest) {
@@ -37,18 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userId, newPassword, totpCode } = resetPasswordSchema.parse(body);
-    const verification = await verifySensitiveActionChallenge(admin.id, 'ADMIN_RESET_PASSWORD', totpCode, {
-      consume: false,
-    });
-
-    if ('error' in verification) {
-      return withPrivateCache(NextResponse.json(
-        { error: verification.error },
-        { status: verification.status }
-      ));
-    }
-
+    const { userId, newPassword } = resetPasswordSchema.parse(body);
     const passwordValidation = await validatePasswordSecurity(newPassword);
 
     if (!passwordValidation.valid) {
@@ -82,29 +68,13 @@ export async function POST(request: NextRequest) {
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password
-    const updateOperations = [
-      prisma.user.update({
-        where: { id: userId },
-        data: {
-          password: hashedPassword,
-          sessionVersion: { increment: 1 },
-        },
-      }),
-    ];
-
-    if (verification.challenge) {
-      updateOperations.push(
-        prisma.sensitiveActionChallenge.update({
-          where: { id: verification.challenge.id },
-          data: {
-            consumedAt: new Date(),
-          },
-        })
-      );
-    }
-
-    await prisma.$transaction(updateOperations);
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+        sessionVersion: { increment: 1 },
+      },
+    });
 
     await logSecurityEvent(
       admin.id,

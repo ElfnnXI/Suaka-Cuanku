@@ -5,13 +5,10 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { enforceMutationSecurity, getSessionCookieOptions, withPrivateCache } from '@/lib/security';
 import { validatePasswordSecurity } from '@/lib/password-security';
-import { verifySensitiveActionChallenge } from '@/lib/mfa';
-
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Password saat ini wajib diisi'),
   newPassword: z.string().min(1, 'Password baru wajib diisi'),
   confirmPassword: z.string().min(1, 'Konfirmasi password wajib diisi'),
-  totpCode: z.string().min(1, 'Kode authenticator wajib diisi'),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: 'Password baru dan konfirmasi password tidak cocok',
   path: ['confirmPassword'],
@@ -49,18 +46,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { currentPassword, newPassword, totpCode } = changePasswordSchema.parse(body);
-    const verification = await verifySensitiveActionChallenge(user.id, 'CHANGE_PASSWORD', totpCode, {
-      consume: false,
-    });
-
-    if ('error' in verification) {
-      return withPrivateCache(NextResponse.json(
-        { error: verification.error },
-        { status: verification.status }
-      ));
-    }
-
+    const { currentPassword, newPassword } = changePasswordSchema.parse(body);
     const passwordValidation = await validatePasswordSecurity(newPassword);
 
     if (!passwordValidation.valid) {
@@ -83,29 +69,13 @@ export async function POST(request: NextRequest) {
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password
-    const updateOperations = [
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          password: hashedPassword,
-          sessionVersion: { increment: 1 },
-        },
-      }),
-    ];
-
-    if (verification.challenge) {
-      updateOperations.push(
-        prisma.sensitiveActionChallenge.update({
-          where: { id: verification.challenge.id },
-          data: {
-            consumedAt: new Date(),
-          },
-        })
-      );
-    }
-
-    const [updatedUser] = await prisma.$transaction(updateOperations);
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        sessionVersion: { increment: 1 },
+      },
+    });
     await logSecurityEvent(user.id, 'CHANGE_PASSWORD', `Password akun ${user.email} berhasil diubah`);
 
     const token = await generateToken({

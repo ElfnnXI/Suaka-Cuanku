@@ -9,8 +9,9 @@ import {
   validateOrigin,
   withPrivateCache,
 } from '@/lib/security';
-import { attachPendingMfa, beginMfaChallenge } from '@/lib/mfa';
 import { verifyCaptcha } from '@/lib/captcha';
+import { generateToken } from '@/lib/auth';
+import { applyCsrfCookie, clearAuthCookies, createCsrfToken, getSessionCookieOptions } from '@/lib/security';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -173,17 +174,27 @@ export async function POST(request: NextRequest) {
       ));
     }
 
-    const mfaChallenge = await beginMfaChallenge(user.id);
+    const token = await generateToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionVersion: user.sessionVersion,
+    });
+
     const response = NextResponse.json({
-      message: 'Password verified',
-      requiresMfa: true,
-      mfa: {
-        setupRequired: mfaChallenge.setupRequired,
-        totpEnrolled: !mfaChallenge.setupRequired,
+      message: 'Login successful',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
     });
-    attachPendingMfa(response, mfaChallenge.challenge.id);
-    await logSecurityEvent(user.id, 'LOGIN_PASSWORD_VERIFIED', `Password login ${user.email} valid, menunggu MFA`, undefined, ipAddress, request.headers.get('user-agent') || undefined);
+
+    clearAuthCookies(response);
+    response.cookies.set('token', token, getSessionCookieOptions());
+    applyCsrfCookie(response, createCsrfToken());
+    await logSecurityEvent(user.id, 'LOGIN_SUCCESS', `User ${user.email} berhasil login`, undefined, ipAddress, request.headers.get('user-agent') || undefined);
 
     return withPrivateCache(response);
   } catch (error) {

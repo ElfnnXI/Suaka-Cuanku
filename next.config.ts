@@ -34,6 +34,9 @@ const nextConfig: NextConfig = {
   // Ensure trailing slashes to prevent 307 redirects on API routes
   trailingSlash: false,
   poweredByHeader: false,
+  turbopack: {
+    root: process.cwd(),
+  },
   async headers() {
     return [
       {
